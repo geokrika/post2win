@@ -10,34 +10,36 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { userId, username, title, textContent, fileUrl, fileType } = body
 
-    // 1. Έλεγχος αν υπάρχει το userId
     if (!userId) {
       return NextResponse.json({ success: false, error: 'User ID is required' }, { status: 400 })
     }
 
-    // 2. Εξασφαλίζουμε ότι ο χρήστης υπάρχει στον πίνακα "users" (UPSERT)
-    // Αυτό αποτρέπει το foreign key constraint error!
-    const { error: userError } = await supabase
+    // 1. ΔΟΚΙΜΑΖΟΥΜΕ ΠΡΩΤΑ ΝΑ ΒΡΟΥΜΕ Η ΝΑ ΦΤΙΑΞΟΥΜΕ ΤΟΝ ΧΡΗΣΤΗ
+    const { data: userData, error: userError } = await supabase
       .from('users')
       .upsert(
         { 
-          id: userId, 
+          id: String(userId), 
           username: username || 'Anonymous' 
         }, 
         { onConflict: 'id' }
       )
+      .select()
 
     if (userError) {
-      console.error('Error syncing user:', userError)
-      return NextResponse.json({ success: false, error: `User sync failed: ${userError.message}` }, { status: 400 })
+      console.error('User sync failed completely:', userError)
+      return NextResponse.json({ 
+        success: false, 
+        error: `Δεν ήταν δυνατός ο συγχρονισμός του χρήστη (${userError.message})` 
+      }, { status: 400 })
     }
 
-    // 3. Δημιουργία του Post
+    // 2. ΕΙΣΑΓΩΓΗ ΤΟΥ POST
     const { data, error } = await supabase
       .from('posts')
       .insert([
         {
-          user_id: userId,
+          user_id: String(userId),
           title: title || '',
           text_content: textContent || '',
           file_url: fileUrl || '',
@@ -49,7 +51,8 @@ export async function POST(request: Request) {
       .select()
 
     if (error) {
-      throw error
+      console.error('Post insertion error:', error)
+      return NextResponse.json({ success: false, error: error.message }, { status: 400 })
     }
 
     return NextResponse.json({ success: true, post: data[0] })
