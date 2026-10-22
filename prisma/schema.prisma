@@ -64,6 +64,7 @@ model users {
   is_verified              Boolean?     @default(false)
   created_at               DateTime?    @default(now()) @db.Timestamptz(6)
   bets                     bets[]
+  posts                    posts[]
   user_files               user_files[]
   votes                    votes[]
 }
@@ -76,8 +77,11 @@ model votes {
   amount         Decimal     @db.Decimal(10, 2)
   tickets_earned BigInt
   created_at     DateTime?   @default(now()) @db.Timestamptz(6)
+  post_id        String?     @db.Uuid
+  user_id        String?     @db.Uuid
   user_files     user_files? @relation(fields: [file_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  users          users?      @relation(fields: [voter_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  posts          posts?      @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users          users?      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
 model platform_fees {
@@ -85,4 +89,27 @@ model platform_fees {
   amount      Decimal  @db.Decimal(12, 2)
   source_type String   @default("BET_FEE")
   created_at  DateTime @default(now())
+}
+
+model admin_revenues {
+  id                   Int       @id @default(autoincrement())
+  user_id              String?
+  bet_amount           Decimal?  @db.Decimal
+  house_fee            Decimal?  @db.Decimal
+  jackpot_contribution Decimal?  @db.Decimal
+  created_at           DateTime? @default(now()) @db.Timestamp(6)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model posts {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id      String?   @db.Uuid
+  title        String?
+  text_content String?
+  file_url     String?
+  file_type    String?
+  created_at   DateTime? @default(dbgenerated("timezone('utc'::text, now())")) @db.Timestamptz(6)
+  is_active    Boolean?  @default(true)
+  users        users?    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  votes        votes[]
 }

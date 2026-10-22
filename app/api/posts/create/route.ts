@@ -19,9 +19,9 @@ export async function POST(request: Request) {
       .insert([
         {
           user_id: userId,
-          username: username || 'Anonymous',
+          //username: username || 'Anonymous',
           title: title || '',
-          text_content: textContent || '',
+          //text_cvontent: textContent || '',
           file_url: fileUrl || '',
           file_type: fileType || 'image',
           is_active: true,
