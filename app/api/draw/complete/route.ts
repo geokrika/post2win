@@ -5,11 +5,16 @@ export async function POST(req: Request) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-    
+
     if (!supabaseUrl) {
-      throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable')
+      return NextResponse.json({ error: 'Missing Supabase URL' }, { status: 500 })
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    // ... ο υπόλοιπος κώδικας της POST συνάρτησης παραμένει ίδιος ...
+    // Ο υπόλοιπος κώδικας του API handler...
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+}
