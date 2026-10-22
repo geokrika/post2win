@@ -14,32 +14,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'User ID is required' }, { status: 400 })
     }
 
-    // 1. ΔΟΚΙΜΑΖΟΥΜΕ ΠΡΩΤΑ ΝΑ ΒΡΟΥΜΕ Η ΝΑ ΦΤΙΑΞΟΥΜΕ ΤΟΝ ΧΡΗΣΤΗ
-    const { data: userData, error: userError } = await supabase
+    // 1. ΣΥΓΧΡΟΝΙΣΜΟΣ ΧΡΗΣΤΗ: Το userId αντιστοιχίζεται στη στήλη "id" του πίνακα users
+    const { error: userError } = await supabase
       .from('users')
       .upsert(
         { 
-          id: String(userId), 
-          username: username || 'Anonymous' 
+          id: String(userId), // 👈 Εδώ μπαίνει στη στήλη 'id' του users
+          username: username || 'Anonymous'
         }, 
         { onConflict: 'id' }
       )
-      .select()
 
     if (userError) {
-      console.error('User sync failed completely:', userError)
+      console.error('User sync failed:', userError)
       return NextResponse.json({ 
         success: false, 
-        error: `Δεν ήταν δυνατός ο συγχρονισμός του χρήστη (${userError.message})` 
+        error: `Σφάλμα συγχρονισμού χρήστη: ${userError.message}` 
       }, { status: 400 })
     }
 
-    // 2. ΕΙΣΑΓΩΓΗ ΤΟΥ POST
+    // 2. ΔΗΜΙΟΥΡΓΙΑ POST: Το userId μπαίνει στη στήλη "user_id" του πίνακα posts
     const { data, error } = await supabase
       .from('posts')
       .insert([
         {
-          user_id: String(userId),
+          user_id: String(userId), // 👈 Εδώ μπαίνει στη στήλη 'user_id' του posts
           title: title || '',
           text_content: textContent || '',
           file_url: fileUrl || '',
@@ -51,7 +50,7 @@ export async function POST(request: Request) {
       .select()
 
     if (error) {
-      console.error('Post insertion error:', error)
+      console.error('Post creation error:', error)
       return NextResponse.json({ success: false, error: error.message }, { status: 400 })
     }
 
