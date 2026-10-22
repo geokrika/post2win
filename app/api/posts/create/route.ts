@@ -14,31 +14,44 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'User ID is required' }, { status: 400 })
     }
 
-    // 1. ΣΥΓΧΡΟΝΙΣΜΟΣ ΧΡΗΣΤΗ: Το userId αντιστοιχίζεται στη στήλη "id" του πίνακα users
-    const { error: userError } = await supabase
+    // 1. ΕΛΕΓΧΟΣ ΑΝ ΥΠΑΡΧΕΙ ΗΔΗ Ο ΧΡΗΣΤΗΣ
+    const { data: existingUser } = await supabase
       .from('users')
-      .upsert(
-        { 
-          id: String(userId), // 👈 Εδώ μπαίνει στη στήλη 'id' του users
-          username: username || 'Anonymous'
-        }, 
-        { onConflict: 'id' }
-      )
+      .select('id')
+      .eq('id', String(userId))
+      .maybeSingle()
 
-    if (userError) {
-      console.error('User sync failed:', userError)
-      return NextResponse.json({ 
-        success: false, 
-        error: `Σφάλμα συγχρονισμού χρήστη: ${userError.message}` 
-      }, { status: 400 })
+    // 2. ΑΝ ΔΕΝ ΥΠΑΡΧΕΙ, ΔΗΜΙΟΥΡΓΟΥΜΕ ΕΓΓΡΑΦΗ ΜΕ ΜΟΝΑΔΙΚΟ FALLBACK USERNAME
+    if (!existingUser) {
+      // Παράγουμε ένα μοναδικό username αν το δοσμένο προκαλεί σύγκρουση
+      const safeUsername = username 
+        ? `${username}_${String(userId).slice(0, 4)}` 
+        : `User_${String(userId).slice(0, 6)}`
+
+      const { error: insertUserError } = await supabase
+        .from('users')
+        .insert([
+          { 
+            id: String(userId), 
+            username: safeUsername 
+          }
+        ])
+
+      if (insertUserError) {
+        console.error('User creation failed:', insertUserError)
+        return NextResponse.json({ 
+          success: false, 
+          error: `Σφάλμα συγχρονισμού χρήστη: ${insertUserError.message}` 
+        }, { status: 400 })
+      }
     }
 
-    // 2. ΔΗΜΙΟΥΡΓΙΑ POST: Το userId μπαίνει στη στήλη "user_id" του πίνακα posts
+    // 3. ΔΗΜΙΟΥΡΓΙΑ ΤΟΥ POST
     const { data, error } = await supabase
       .from('posts')
       .insert([
         {
-          user_id: String(userId), // 👈 Εδώ μπαίνει στη στήλη 'user_id' του posts
+          user_id: String(userId),
           title: title || '',
           text_content: textContent || '',
           file_url: fileUrl || '',
