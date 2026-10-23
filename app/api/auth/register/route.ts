@@ -10,9 +10,11 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 export async function POST(req: Request) {
+  console.log('--- 🚀 REGISTER PROCESS STARTED ---')
   try {
     const body = await req.json().catch(() => ({}))
-    
+    console.log('📥 Request Body:', { username: body?.username, email: body?.email })
+
     const username = body?.username?.trim() || ''
     const fullName = body?.fullName?.trim() || username
     const email = body?.email?.trim() || ''
@@ -26,31 +28,32 @@ export async function POST(req: Request) {
       )
     }
 
-    // 1. Έλεγχος αν υπάρχει ήδη ο χρήστης
+    // 1. Έλεγχος αν υπάρχει ήδη ο χρήστης στην Prisma
     const existingUser = await prisma.users.findFirst({
       where: {
         OR: [
           { username: username },
-          { email: email },
-          ...(phone ? [{ phone_number: phone }] : [])
+          { email: email }
         ]
       }
     })
 
     if (existingUser) {
+      console.log('⚠️ User already exists in DB:', existingUser.username)
       return NextResponse.json(
-        { success: false, error: 'Ο χρήστης με αυτό το username ή email υπάρχει ήδη' },
+        { success: false, error: 'Ο χρήστης με αυτό το username ή email υπάρχει ήδη στη βάση' },
         { status: 400 }
       )
     }
 
-    // 2. Παραγωγή μοναδικού UUID & Player ID
+    // 2. Παραγωγή UUID
     let authUserId: string = crypto.randomUUID()
     const generatedPlayerId = 'PL' + Math.floor(100000 + Math.random() * 900000)
 
-    // 3. Δημιουργία στο Supabase Auth (αν χρησιμοποιείται)
+    // 3. Εγγραφή στο Supabase Auth
     try {
-      const { data: authData } = await supabase.auth.admin.createUser({
+      console.log('🔄 Creating user in Supabase Auth...')
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: email,
         password: password || 'DefaultPassword123!',
         email_confirm: true,
@@ -59,12 +62,16 @@ export async function POST(req: Request) {
 
       if (authData?.user?.id) {
         authUserId = authData.user.id
+        console.log('✅ Supabase Auth Created ID:', authUserId)
+      } else if (authError) {
+        console.warn('⚠️ Supabase Auth Error (continuing to DB):', authError.message)
       }
     } catch (sbErr) {
-      console.warn('Supabase Auth Warning:', sbErr)
+      console.warn('⚠️ Supabase Auth Exception:', sbErr)
     }
 
-    // 4. Κανονική Εγγραφή στη Βάση Δεδομένων με ΟΛΑ τα στοιχεία
+    // 4. Εγγραφή στη Βάση Δεδομένων μέσω Prisma
+    console.log('🔄 Creating user in PostgreSQL via Prisma...')
     const newUser = await prisma.users.create({
       data: {
         id: authUserId as any,
@@ -80,12 +87,12 @@ export async function POST(req: Request) {
       },
     })
 
-    console.log('✅ USER REGISTERED FULLY IN DATABASE:', newUser)
+    console.log('✅ USER SUCCESSFULLY CREATED IN DB:', newUser.id)
 
     return NextResponse.json({ success: true, user: newUser }, { status: 200 })
 
   } catch (error: any) {
-    console.error('❌ REGISTER ERROR:', error)
+    console.error('❌ REGISTER API PRISMA ERROR:', error)
     return NextResponse.json(
       { success: false, error: error?.message || 'Registration failed' },
       { status: 500 }
