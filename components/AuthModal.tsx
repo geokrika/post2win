@@ -79,7 +79,7 @@ export default function AuthModal({
     try {
       if (mode === 'register') {
         if (!fullName.trim() || !username.trim() || !email.trim() || !password.trim()) {
-          setError(isEn ? 'Please fill in all required fields.' : 'Παρακαλώ συμπληρώστε τα υποχρεωτικά πεδία.')
+          setError(isEn ? 'Please fill in all required fields.' : 'Παρακαλώ συμπληρώστε όλα τα υποχρεωτικά πεδία.')
           setLoading(false)
           return
         }
@@ -94,19 +94,51 @@ export default function AuthModal({
             phone: phone.trim(),
             password: password.trim(),
           }),
-        }).catch(() => null)
+        })
 
-        let userData = null
+        const data = await res.json()
 
-        if (res && res.ok) {
-          const contentType = res.headers.get('content-type') || ''
-          if (contentType.includes('application/json')) {
-            const data = await res.json()
-            if (data.success && data.user) {
-              userData = data.user
-            }
-          }
+        if (!res.ok || !data.success) {
+          setError(data.error || (isEn ? 'Registration failed.' : 'Η εγγραφή απέτυχε.'))
+          setLoading(false)
+          return
         }
+
+        // ✅ Μόνο αν η εγγραφή πέτυχε στη βάση, αποθηκεύουμε τον χρήστη
+        saveAndCompleteUser(data.user)
+
+      } else {
+        if (!email.trim() || !password.trim()) {
+          setError(isEn ? 'Please fill in email and password.' : 'Παρακαλώ συμπληρώστε email και κωδικό.')
+          setLoading(false)
+          return
+        }
+
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            identifier: email.trim(),
+            password: password.trim(),
+          }),
+        })
+
+        const data = await res.json()
+
+        if (!res.ok || !data.success) {
+          setError(data.error || (isEn ? 'Login failed.' : 'Η σύνδεση απέτυχε.'))
+          setLoading(false)
+          return
+        }
+
+        saveAndCompleteUser(data.user)
+      }
+    } catch (err: any) {
+      setError(err.message || (isEn ? 'An error occurred' : 'Σφάλμα κατά την επεξεργασία'))
+    } finally {
+      setLoading(false)
+    }
+  }
 
         // 🟢 Δυναμικό Fallback Register με ΜΟΝΑΔΙΚΟ ID για κάθε νέο χρήστη
         if (!userData) {
