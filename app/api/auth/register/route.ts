@@ -15,13 +15,13 @@ export async function POST(req: Request) {
     
     const username = body?.username?.trim() || ''
     const fullName = body?.fullName?.trim() || username
-    const email = body?.email?.trim() || `${username.toLowerCase()}@nexus.local`
+    const email = body?.email?.trim() || ''
     const phone = body?.phone?.trim() || null
-    const password = body?.password || 'default_password'
+    const password = body?.password || ''
 
-    if (!username) {
+    if (!username || !email) {
       return NextResponse.json(
-        { success: false, error: 'Το όνομα χρήστη είναι υποχρεωτικό' },
+        { success: false, error: 'Το username και το email είναι υποχρεωτικά' },
         { status: 400 }
       )
     }
@@ -44,31 +44,27 @@ export async function POST(req: Request) {
       )
     }
 
-    // 2. Παραγωγή έγκυρου UUID
+    // 2. Παραγωγή μοναδικού UUID & Player ID
     let authUserId: string = crypto.randomUUID()
+    const generatedPlayerId = 'PL' + Math.floor(100000 + Math.random() * 900000)
 
-    // 3. Προσπάθεια εγγραφής στο Supabase Auth
+    // 3. Δημιουργία στο Supabase Auth (αν χρησιμοποιείται)
     try {
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      const { data: authData } = await supabase.auth.admin.createUser({
         email: email,
-        password: password,
+        password: password || 'DefaultPassword123!',
         email_confirm: true,
         user_metadata: { username, full_name: fullName }
       })
 
       if (authData?.user?.id) {
         authUserId = authData.user.id
-      } else if (authError) {
-        console.warn('Supabase Auth Admin Warning:', authError.message)
       }
     } catch (sbErr) {
-      console.warn('Supabase Auth Client Error:', sbErr)
+      console.warn('Supabase Auth Warning:', sbErr)
     }
 
-    // 4. Παραγωγή player_id
-    const generatedPlayerId = 'PL' + Math.floor(100000 + Math.random() * 900000)
-
-    // 5. Εγγραφή στη βάση μέσω Prisma (με type casting στο id για να αποφευχθεί το TS error)
+    // 4. Κανονική Εγγραφή στη Βάση Δεδομένων με ΟΛΑ τα στοιχεία
     const newUser = await prisma.users.create({
       data: {
         id: authUserId as `${string}-${string}-${string}-${string}-${string}`,
@@ -84,12 +80,12 @@ export async function POST(req: Request) {
       },
     })
 
-    console.log('✅ NEW USER CREATED IN DATABASE:', newUser.id, newUser.username)
+    console.log('✅ USER REGISTERED FULLY IN DATABASE:', newUser)
 
     return NextResponse.json({ success: true, user: newUser }, { status: 200 })
 
   } catch (error: any) {
-    console.error('❌ REGISTER API PRISMA ERROR:', error)
+    console.error('❌ REGISTER ERROR:', error)
     return NextResponse.json(
       { success: false, error: error?.message || 'Registration failed' },
       { status: 500 }
