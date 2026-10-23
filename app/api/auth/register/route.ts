@@ -44,8 +44,8 @@ export async function POST(req: Request) {
       )
     }
 
-    // 2. Παραγωγή έγκυρου UUID αν δεν επιστρέψει το Supabase
-    let authUserId = crypto.randomUUID()
+    // 2. Παραγωγή έγκυρου UUID
+    let authUserId: string = crypto.randomUUID()
 
     // 3. Προσπάθεια εγγραφής στο Supabase Auth
     try {
@@ -68,10 +68,10 @@ export async function POST(req: Request) {
     // 4. Παραγωγή player_id
     const generatedPlayerId = 'PL' + Math.floor(100000 + Math.random() * 900000)
 
-    // 5. Εγγραφή στη βάση μέσω Prisma
+    // 5. Εγγραφή στη βάση μέσω Prisma (με type casting στο id για να αποφευχθεί το TS error)
     const newUser = await prisma.users.create({
       data: {
-        id: authUserId, // Εγγυημένο UUID (είτε από Supabase Auth είτε γνησίως παράγωγο)
+        id: authUserId as `${string}-${string}-${string}-${string}-${string}`,
         player_id: generatedPlayerId,
         username: username,
         email: email,
