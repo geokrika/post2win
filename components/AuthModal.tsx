@@ -104,7 +104,7 @@ export default function AuthModal({
           return
         }
 
-        // ✅ Μόνο αν η εγγραφή πέτυχε στη βάση, αποθηκεύουμε τον χρήστη
+        // ✅ Αποθήκευση μόνο αν η εγγραφή πέτυχε στη βάση
         saveAndCompleteUser(data.user)
 
       } else {
@@ -139,6 +139,8 @@ export default function AuthModal({
       setLoading(false)
     }
   }
+  
+
 
         // 🟢 Δυναμικό Fallback Register με ΜΟΝΑΔΙΚΟ ID για κάθε νέο χρήστη
         if (!userData) {
