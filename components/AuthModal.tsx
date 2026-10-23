@@ -50,23 +50,19 @@ export default function AuthModal({
     if (onSwitchMode) onSwitchMode(newMode)
   }
 
-  // 🟢 Βοηθητική συνάρτηση για ασφαλή αποθήκευση χρήστη
+  // 🟢 Αποθήκευση πραγματικού χρήστη από τη βάση
   const saveAndCompleteUser = (rawUserData: any) => {
-    // 1. Καθαρισμός παλιών δεδομένων
     localStorage.removeItem('ugc_user')
 
     const cleanUser = {
-      id: rawUserData.id || rawUserData.user_id || 'usr-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-      player_id: rawUserData.player_id || 'PLY-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
-      username: rawUserData.username || rawUserData.full_name || (rawUserData.email ? rawUserData.email.split('@')[0] : 'User'),
+      id: rawUserData.id || rawUserData.user_id,
+      player_id: rawUserData.player_id,
+      username: rawUserData.username || rawUserData.full_name || rawUserData.email?.split('@')[0],
       email: rawUserData.email || '',
       wallet_balance: Number(rawUserData.wallet_balance ?? 100.00)
     }
 
-    // 2. Αποθήκευση στο localStorage
     localStorage.setItem('ugc_user', JSON.stringify(cleanUser))
-
-    // 3. Ενημέρωση της εφαρμογής
     onSuccess(cleanUser)
     onClose()
   }
@@ -104,7 +100,6 @@ export default function AuthModal({
           return
         }
 
-        // ✅ Αποθήκευση μόνο αν η εγγραφή πέτυχε στη βάση
         saveAndCompleteUser(data.user)
 
       } else {
@@ -132,70 +127,6 @@ export default function AuthModal({
         }
 
         saveAndCompleteUser(data.user)
-      }
-    } catch (err: any) {
-      setError(err.message || (isEn ? 'An error occurred' : 'Σφάλμα κατά την επεξεργασία'))
-    } finally {
-      setLoading(false)
-    }
-  }
-  
-
-
-        // 🟢 Δυναμικό Fallback Register με ΜΟΝΑΔΙΚΟ ID για κάθε νέο χρήστη
-        if (!userData) {
-          userData = {
-            id: 'usr-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-            player_id: 'PLY-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
-            username: username.trim(),
-            email: email.trim(),
-            wallet_balance: 100.00
-          }
-        }
-
-        saveAndCompleteUser(userData)
-
-      } else {
-        if (!email.trim() || !password.trim()) {
-          setError(isEn ? 'Please fill in email and password.' : 'Παρακαλώ συμπληρώστε email και κωδικό.')
-          setLoading(false)
-          return
-        }
-
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            identifier: email.trim(),
-            password: password.trim(),
-          }),
-        }).catch(() => null)
-
-        let userData = null
-
-        if (res && res.ok) {
-          const contentType = res.headers.get('content-type') || ''
-          if (contentType.includes('application/json')) {
-            const data = await res.json()
-            if (data.success && data.user) {
-              userData = data.user
-            }
-          }
-        }
-
-        // 🟢 Δυναμικό Fallback Login βασισμένο στο Email του χρήστη
-        if (!userData) {
-          const derivedUsername = email.split('@')[0] || 'User'
-          userData = {
-            id: 'usr-login-' + derivedUsername.toLowerCase().replace(/[^a-z0-9]/g, ''),
-            player_id: 'PLY-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
-            username: derivedUsername,
-            email: email.trim(),
-            wallet_balance: 100.00
-          }
-        }
-
-        saveAndCompleteUser(userData)
       }
     } catch (err: any) {
       setError(err.message || (isEn ? 'An error occurred' : 'Σφάλμα κατά την επεξεργασία'))
