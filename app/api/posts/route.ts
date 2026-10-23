@@ -5,13 +5,18 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const DEFAULT_USER_ID = 'fa50bfff-6d9c-4bee-8a79-06487b11abfd'
-
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}))
-    let { userId, title, textContent, mediaType, fileUrl } = body
+    const { userId, title, textContent, mediaType, fileUrl } = body
+
+    // 1. ΕΛΕΓΧΟΣ ΑΠΑΡΑΙΤΗΤΩΝ ΠΕΔΙΩΝ
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: 'Μη εξουσιοδοτημένη ενέργεια. Απαιτείται αναγνωριστικό χρήστη.' },
+        { status: 401 }
+      )
+    }
 
     if (!title || !textContent) {
       return NextResponse.json(
@@ -20,67 +25,51 @@ export async function POST(req: Request) {
       )
     }
 
-    if (!userId || userId === 'undefined' || userId === 'null') {
-      userId = DEFAULT_USER_ID
+    // 2. ΕΛΕΓΧΟΣ ΥΠΑΡΞΗΣ ΧΡΗΣΤΗ (Ζητάμε ΜΟΝΟ id και username)
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id, username')
+      .eq('id', String(userId))
+      .single()
+
+    if (userError || !user) {
+      return NextResponse.json(
+        { success: false, error: 'Ο χρήστης δεν βρέθηκε στη βάση δεδομένων. Παρακαλώ συνδεθείτε ξανά.' },
+        { status: 404 }
+      )
     }
 
-    // 1. ΕΥΡΕΣΗ UUID ΧΡΗΣΤΗ
-    let realUserId: string = DEFAULT_USER_ID
-
-    if (UUID_REGEX.test(userId)) {
-      const { data: uById } = await supabase.from('users').select('id').eq('id', userId).maybeSingle()
-      if (uById?.id) realUserId = uById.id
-    } else {
-      const { data: uByPlayer } = await supabase.from('users').select('id').eq('player_id', userId).maybeSingle()
-      if (uByPlayer?.id) realUserId = uByPlayer.id
-    }
-
-    // 2. ΔΗΜΙΟΥΡΓΙΑ HASH ID
-    const hashId = 'post-' + Math.random().toString(36).substring(2, 9)
-
-    // 3. ΕΓΓΡΑΦΗ ΣΤΟΝ ΠΙΝΑΚΑ POSTS
-    const postPayload: any = {
-      user_id: realUserId,
-      title: title,
-      text_content: textContent,
-      file_url: fileUrl || null,
-      file_type: mediaType ? mediaType.toLowerCase() : 'none',
-      hash_id: hashId,
-      status: 'ACTIVE'
-    }
-
+    // 3. ΕΓΓΡΑΦΗ ΣΤΟΝ ΠΙΝΑΚΑ POSTS & JOIN ΜΕ ΤΟ USERS (Μόνο id, username)
     const { data: newPost, error: insertError } = await supabase
       .from('posts')
-      .insert(postPayload)
+      .insert([
+        {
+          user_id: user.id,
+          title,
+          text_content: textContent,
+          file_url: fileUrl || null,
+          file_type: mediaType ? mediaType.toLowerCase() : 'none',
+          status: 'ACTIVE'
+        }
+      ])
       .select('*, users(id, username)')
-      .maybeSingle()
+      .single()
 
     if (insertError) {
-      console.error('Supabase Insert Post Error:', insertError)
+      console.error('Supabase Insert Error:', insertError)
       return NextResponse.json(
-        { success: false, error: `Σφάλμα βάσης δεδομένων: ${insertError.message}` },
+        { success: false, error: `Σφάλμα κατά την αποθήκευση: ${insertError.message}` },
         { status: 500 }
       )
     }
 
     return NextResponse.json({
       success: true,
-      post: newPost || {
-        id: hashId,
-        user_id: realUserId,
-        title: title,
-        text_content: textContent,
-        file_url: fileUrl || null,
-        file_type: mediaType ? mediaType.toLowerCase() : 'none',
-        status: 'ACTIVE',
-        created_at: new Date().toISOString(),
-        users: { id: realUserId, username: 'Player' },
-        votes: []
-      }
+      post: newPost
     })
 
   } catch (err: any) {
-    console.error('API /api/posts Error:', err)
+    console.error('API Error:', err)
     return NextResponse.json(
       { success: false, error: err.message || 'Εσωτερικό σφάλμα διακομιστή' },
       { status: 500 }

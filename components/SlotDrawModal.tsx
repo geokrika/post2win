@@ -27,6 +27,7 @@ export default function SlotDrawModal({
   const isEn = lang === 'en'
   const isCompletedRef = useRef(false)
   const winnerRef = useRef<any | null>(null)
+  const startTimeRef = useRef<number | null>(null)
 
   // Υπολογισμός Συνολικών Λαχνών (Total Tickets)
   const totalTickets = posts.reduce((acc, post) => {
@@ -35,37 +36,48 @@ export default function SlotDrawModal({
   }, 0)
 
   useEffect(() => {
-    if (!isOpen || !posts || posts.length === 0) return
+    if (!isOpen || !posts || posts.length === 0) {
+      startTimeRef.current = null // Reset μόνο όταν κλείνει εντελώς η κλήρωση
+      return
+    }
 
-    isCompletedRef.current = false
-    winnerRef.current = null
-    setPhase('warmup')
-    setWinner(null)
-    setSecondsLeft(70)
+    // Αν είναι η πρώτη φορά που ανοίγει, καταγράφουμε τη στιγμή έναρξης
+    if (!startTimeRef.current) {
+      startTimeRef.current = Date.now()
+      isCompletedRef.current = false
+      winnerRef.current = null
+      setWinner(null)
+    }
 
-    const startTime = Date.now()
-    const totalDuration = 70000 // 10s warmup + 40s spinning + 20s winner = 70s
+    const TOTAL_DURATION = 70000 // 70 δευτερόλεπτα συνολικά
 
-    // 1. Κύριος Timer 70s
     const timerInterval = setInterval(() => {
-      const elapsed = Date.now() - startTime
-      const remaining = Math.max(0, Math.ceil((totalDuration - elapsed) / 1000))
+      if (!startTimeRef.current) return
 
+      const elapsed = Date.now() - startTimeRef.current
+      const remaining = Math.max(0, Math.ceil((TOTAL_DURATION - elapsed) / 1000))
+      
       setSecondsLeft(remaining)
 
+      // 1. Φάση Προετοιμασίας (0 - 10s)
       if (elapsed < 10000) {
         setPhase('warmup')
-      } else if (elapsed < 50000) {
+      } 
+      // 2. Φάση Περιστροφής (10s - 50s)
+      else if (elapsed < 50000) {
         setPhase('spinning')
-      } else if (elapsed < 70000) {
-        // 🔒 Κλειδώνουμε τον νικητή μία φορά και σταματάμε την τυχαία εναλλαγή
+      } 
+      // 3. Φάση Νικητή (50s - 70s)
+      else if (elapsed < 70000) {
         if (!winnerRef.current) {
           const picked = posts[Math.floor(Math.random() * posts.length)]
           winnerRef.current = picked
           setWinner(picked)
         }
         setPhase('winner')
-      } else {
+      } 
+      // 4. Ολοκλήρωση
+      else {
         clearInterval(timerInterval)
         if (!isCompletedRef.current) {
           isCompletedRef.current = true
@@ -75,23 +87,42 @@ export default function SlotDrawModal({
       }
     }, 200)
 
-    // 2. Περιστροφή Κυλίνδρου (Reel Spin Animation) - Σταματάει μόλις φτάσουμε στο 'winner'
-    const reelInterval = setInterval(() => {
-      setCurrentIndex((prev) => {
-        if (winnerRef.current) return prev // Σταμάτημα περιστροφής αν κλειδώθηκε νικητής
-        return (prev + 1) % posts.length
-      })
-    }, 80)
-
     return () => {
       clearInterval(timerInterval)
-      clearInterval(reelInterval)
     }
-  }, [isOpen])
+  }, [isOpen, posts])
+
+  // Animation Περιστροφής (Reel Spin)
+  useEffect(() => {
+    if (!isOpen || phase !== 'spinning') return
+
+    let speed = 70
+    let timeoutId: NodeJS.Timeout
+
+    const spin = () => {
+      setCurrentIndex((prev) => (prev + 1) % posts.length)
+
+      // Σταδιακή επιβράδυνση καθώς πλησιάζουμε στο τέλος της περιστροφής
+      if (secondsLeft <= 25 && secondsLeft > 20) {
+        speed += 12
+      }
+
+      timeoutId = setTimeout(spin, speed)
+    }
+
+    timeoutId = setTimeout(spin, speed)
+
+    return () => clearTimeout(timeoutId)
+  }, [isOpen, phase, secondsLeft, posts.length])
+
+  // Καθαρό κλείσιμο όταν ο χρήστης πατάει Έξοδος
+  const handleManualClose = () => {
+    startTimeRef.current = null // Καθαρισμός του timer
+    onClose()
+  }
 
   if (!isOpen || !posts || posts.length === 0) return null
 
-  // Χρήση του κλειδωμένου νικητή στη φάση 'winner'
   const activePost = phase === 'winner' ? (winner || winnerRef.current || posts[0]) : posts[currentIndex]
   
   const authorName =
@@ -106,19 +137,28 @@ export default function SlotDrawModal({
   const getDisplaySeconds = () => {
     if (phase === 'warmup') return Math.max(1, secondsLeft - 60)
     if (phase === 'spinning') return Math.max(1, secondsLeft - 20)
-    return Math.max(1, secondsLeft) // 20s σταθερή αντίστροφη μέτρηση για τον νικητή
+    return Math.max(1, secondsLeft)
   }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
       <div className="bg-gradient-to-b from-slate-900 via-slate-950 to-black border-2 border-amber-500 rounded-3xl p-6 max-w-lg w-full text-center shadow-[0_0_70px_rgba(245,158,11,0.5)] relative overflow-hidden">
         
+        {/* ΚΟΥΜΠΙ ΕΞΟΔΟΥ (CLOSE BUTTON) */}
+        <button
+          onClick={handleManualClose}
+          className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 hover:text-white hover:bg-red-500/20 hover:border-red-500 transition-all flex items-center justify-center font-bold text-sm"
+          title={isEn ? 'Close' : 'Έξοδος'}
+        >
+          ✕
+        </button>
+
         {/* Glow Backgrounds */}
         <div className="absolute -top-20 -left-20 w-44 h-44 bg-amber-500/20 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute -bottom-20 -right-20 w-44 h-44 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none"></div>
 
         {/* 1. ΣΤΑΘΕΡΑ ΣΤΑΤΙΣΤΙΚΑ ΣΤΟΙΧΕΙΑ (HEADER) */}
-        <div className="grid grid-cols-3 gap-2 mb-4 bg-slate-950/80 border border-slate-800 p-3 rounded-2xl">
+        <div className="grid grid-cols-3 gap-2 mb-4 bg-slate-950/80 border border-slate-800 p-3 rounded-2xl pr-8">
           <div className="text-center">
             <span className="text-[10px] text-slate-400 font-bold uppercase block">
               {isEn ? 'JACKPOT' : 'ΤΖΑΚΠΟΤ'}

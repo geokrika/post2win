@@ -230,9 +230,9 @@ export default function HomePage() {
           if (activeCount >= 4) {
             setDrawCancelledMessage(null)
             setIsSlotDrawOpen(true)
-            ;(async () => {
-              await executeJackpotDraw()
-            })()
+            //;(async () => {
+            //  await executeJackpotDraw()
+            //})()
           } else {
             setDrawCancelledMessage(
               lang === 'en'

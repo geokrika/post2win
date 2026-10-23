@@ -14,39 +14,36 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'User ID is required' }, { status: 400 })
     }
 
-    // 1. ΕΛΕΓΧΟΣ ΑΝ ΥΠΑΡΧΕΙ ΗΔΗ Ο ΧΡΗΣΤΗΣ
+    const currentUsername = username || 'Anonymous'
+
+    // 1. ΕΛΕΓΧΟΣ ΑΝ ΥΠΑΡΧΕΙ Ο ΧΡΗΣΤΗΣ
     const { data: existingUser } = await supabase
       .from('users')
-      .select('id')
+      .select('id, username')
       .eq('id', String(userId))
       .maybeSingle()
 
-    // 2. ΑΝ ΔΕΝ ΥΠΑΡΧΕΙ, ΔΗΜΙΟΥΡΓΟΥΜΕ ΕΓΓΡΑΦΗ ΜΕ ΜΟΝΑΔΙΚΟ FALLBACK USERNAME
     if (!existingUser) {
-      // Παράγουμε ένα μοναδικό username αν το δοσμένο προκαλεί σύγκρουση
-      const safeUsername = username 
-        ? `${username}_${String(userId).slice(0, 4)}` 
-        : `User_${String(userId).slice(0, 6)}`
-
-      const { error: insertUserError } = await supabase
+      // Αν δεν υπάρχει, τον δημιουργούμε με το κανονικό του username
+      const { error: insertError } = await supabase
         .from('users')
-        .insert([
-          { 
-            id: String(userId), 
-            username: safeUsername 
-          }
-        ])
+        .insert([{ id: String(userId), username: currentUsername }])
 
-      if (insertUserError) {
-        console.error('User creation failed:', insertUserError)
-        return NextResponse.json({ 
-          success: false, 
-          error: `Σφάλμα συγχρονισμού χρήστη: ${insertUserError.message}` 
-        }, { status: 400 })
+      // Αν φάει conflict στο username (επειδή το έχει άλλος), βάζουμε ένα μοναδικό suffix
+      if (insertError) {
+        await supabase
+          .from('users')
+          .insert([{ id: String(userId), username: `${currentUsername}_${String(userId).slice(0, 4)}` }])
       }
+    } else if (existingUser.username !== currentUsername) {
+      // Αν υπάρχει αλλά άλλαξε το username του, το ενημερώνουμε
+      await supabase
+        .from('users')
+        .update({ username: currentUsername })
+        .eq('id', String(userId))
     }
 
-    // 3. ΔΗΜΙΟΥΡΓΙΑ ΤΟΥ POST
+    // 2. ΔΗΜΙΟΥΡΓΙΑ ΤΟΥ POST
     const { data, error } = await supabase
       .from('posts')
       .insert([
@@ -63,8 +60,7 @@ export async function POST(request: Request) {
       .select()
 
     if (error) {
-      console.error('Post creation error:', error)
-      return NextResponse.json({ success: false, error: error.message }, { status: 400 })
+      throw error
     }
 
     return NextResponse.json({ success: true, post: data[0] })
