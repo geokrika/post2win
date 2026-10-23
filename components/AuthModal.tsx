@@ -50,8 +50,13 @@ export default function AuthModal({
     if (onSwitchMode) onSwitchMode(newMode)
   }
 
-  // 🟢 Αποθήκευση πραγματικού χρήστη από τη βάση
+  // 🟢 Αποθήκευση πραγματικού χρήστη που επιστρέφει η βάση
   const saveAndCompleteUser = (rawUserData: any) => {
+    if (!rawUserData || !rawUserData.id) {
+      setError(isEn ? 'Invalid user data received from server.' : 'Μη έγκυρα δεδομένα χρήστη από τον διακομιστή.')
+      return
+    }
+
     localStorage.removeItem('ugc_user')
 
     const cleanUser = {
@@ -92,7 +97,18 @@ export default function AuthModal({
           }),
         })
 
-        const data = await res.json()
+        // 🔍 Ασφαλής ανάγνωση της απάντησης του Server
+        const textResponse = await res.text()
+        let data: any = {}
+        
+        try {
+          data = JSON.parse(textResponse)
+        } catch {
+          console.error('Non-JSON response received:', textResponse)
+          setError(`Server Error Status ${res.status}: ${textResponse.slice(0, 120)}`)
+          setLoading(false)
+          return
+        }
 
         if (!res.ok || !data.success) {
           setError(data.error || (isEn ? 'Registration failed.' : 'Η εγγραφή απέτυχε.'))
@@ -118,7 +134,16 @@ export default function AuthModal({
           }),
         })
 
-        const data = await res.json()
+        const textResponse = await res.text()
+        let data: any = {}
+
+        try {
+          data = JSON.parse(textResponse)
+        } catch {
+          setError(`Server Error Status ${res.status}`)
+          setLoading(false)
+          return
+        }
 
         if (!res.ok || !data.success) {
           setError(data.error || (isEn ? 'Login failed.' : 'Η σύνδεση απέτυχε.'))
@@ -154,7 +179,7 @@ export default function AuthModal({
         </h2>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs p-3 rounded-xl mb-4">
+          <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs p-3 rounded-xl mb-4 break-words">
             {error}
           </div>
         )}
