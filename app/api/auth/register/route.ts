@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     // 4. Κανονική Εγγραφή στη Βάση Δεδομένων με ΟΛΑ τα στοιχεία
     const newUser = await prisma.users.create({
       data: {
-        id: authUserId as `${string}-${string}-${string}-${string}-${string}`,
+        id: authUserId as any,
         player_id: generatedPlayerId,
         username: username,
         email: email,
