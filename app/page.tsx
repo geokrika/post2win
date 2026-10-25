@@ -151,7 +151,7 @@ export default function HomePage() {
       const data = await res.json().catch(() => null)
 
       if (data && data.success && data.executed && data.winner) {
-        const winnerData = data.winner
+        const winnerData = data.winner // 🟢 Παίρνουμε τον ΠΡΑΓΜΑΤΙΚΟ νικητή και τα ΠΟΣΑ από το API
 
         setLastWinner(winnerData)
         localStorage.setItem('ugc_last_winner', JSON.stringify(winnerData))
