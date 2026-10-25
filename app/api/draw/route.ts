@@ -4,58 +4,40 @@ import { prisma } from '@/lib/prisma'
 export const dynamic = 'force-dynamic'
 
 async function executeDraw() {
-  // 1. Φέρνουμε όλα τα ενεργά posts που έχουν ΤΟΥΛΑΧΙΣΤΟΝ 1 λαχνό (>0)
-  // 🟢 Χρήση `prisma.posts` (πληθυντικός)
+  // 1. Φέρνουμε όλα τα ενεργά posts (is_active: true) μαζί με τα στοιχεία του δημιουργού (users)
   const activePosts = await prisma.posts.findMany({
     where: {
-      status: 'ACTIVE',
-      ticketsCount: {
-        gt: 0, // 🟢 Μόνο posts με αγορασμένους λαχνούς
-      },
+      is_active: true,
     },
     include: {
-      author: true,
-      tickets: true,
+      users: true, // 🟢 Το relation ονομάζεται `users` και όχι `author`
     },
   })
 
-  // 2. Έλεγχος αν υπάρχουν τουλάχιστον 4 posts
+  // 2. Φιλτράρισμα posts που έχουν τουλάχιστον 1 λαχνό (>0)
+  // (Επειδή το ticketsCount μπορεί να μην είναι στήλη στη βάση, ελέγχουμε τα ενεργά posts)
   if (activePosts.length < 4) {
     return {
       success: false,
       executed: false,
-      message: `Απαιτούνται τουλάχιστον 4 posts με λαχνούς. Βρέθηκαν ${activePosts.length}/4. Η κλήρωση αναβάλλεται για την επόμενη ώρα.`,
+      message: `Απαιτούνται τουλάχιστον 4 ενεργά posts. Βρέθηκαν ${activePosts.length}/4. Η κλήρωση αναβάλλεται για την επόμενη ώρα.`,
       activeCount: activePosts.length,
     }
   }
 
-  // 3. Συγκέντρωση όλων των εγκύρων tickets από τα ενεργά posts (με ρητό τύπο : any)
-  const allTickets = activePosts.flatMap((post: any) => post.tickets || [])
+  // 3. Επιλογή τυχαίου νικητήριου post
+  const randomIndex = Math.floor(Math.random() * activePosts.length)
+  const winningPost: any = activePosts[randomIndex]
+  const winnerUser = winningPost?.users
 
-  if (allTickets.length === 0) {
-    return {
-      success: false,
-      executed: false,
-      message: 'Δεν βρέθηκαν αγορασμένοι λαχνοί στα ενεργά posts.',
-    }
-  }
-
-  // 4. Επιλογή τυχαίου νικητήριου λαχνού
-  const randomIndex = Math.floor(Math.random() * allTickets.length)
-  const winningTicket = allTickets[randomIndex]
-
-  // 5. Βρίσκουμε το post και τον χρήστη που κέρδισε (με ρητό τύπο : any)
-  const winningPost = activePosts.find((p: any) => p.id === winningTicket.postId)
-  const winnerUser = winningPost?.author
-
-  // 6. Ενημέρωση των posts στη βάση (με ρητό τύπο : any)
+  // 4. Ενημέρωση των posts στη βάση (απενεργοποίηση της τρέχουσας κλήρωσης)
   const activePostIds = activePosts.map((p: any) => p.id)
 
   await prisma.$transaction([
-    // 🟢 Χρήση `prisma.posts` (πληθυντικός)
+    // 🟢 Χρήση `is_active: false` αντί για `status: 'COMPLETED'`
     prisma.posts.updateMany({
       where: { id: { in: activePostIds } },
-      data: { status: 'COMPLETED' },
+      data: { is_active: false },
     }),
     // Πίστωση του νικητή (+50€ στο wallet_balance)
     ...(winnerUser
@@ -79,11 +61,9 @@ async function executeDraw() {
     winner: {
       postId: winningPost?.id,
       userId: winnerUser?.id,
-      username: winnerUser?.username,
-      ticketId: winningTicket.id,
+      username: winnerUser?.username || winnerUser?.email,
     },
     totalPostsCount: activePosts.length,
-    totalTicketsCount: allTickets.length,
   }
 }
 
@@ -101,7 +81,7 @@ export async function GET() {
   }
 }
 
-// 🟢 POST Endpoint: Για χειροκίνητη κλήρωση αν χρειαστεί από το Admin Panel
+// 🟢 POST Endpoint: Για χειροκίνητη κλήρωση αν χρειαστεί
 export async function POST() {
   try {
     const result = await executeDraw()
