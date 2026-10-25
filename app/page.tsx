@@ -33,7 +33,6 @@ export default function HomePage() {
   const [isSlotDrawOpen, setIsSlotDrawOpen] = useState(false)
   const [isMyPostsOpen, setIsMyPostsOpen] = useState(false)
   
-  // ⏱️ Συγχρονισμένη αντίστροφη μέτρηση μέχρι το επόμενο top of the hour (:00)
   const [timeLeft, setTimeLeft] = useState<number>(3600)
   const [drawCancelledMessage, setDrawCancelledMessage] = useState<string | null>(null)
 
@@ -59,7 +58,6 @@ export default function HomePage() {
     setIsCreatePostOpen(true)
   }
 
-  // 🟢 Υπολογισμός ενεργών posts που έχουν ΤΟΥΛΑΧΙΣΤΟΝ 1 λαχνό (>0)
   const getActivePostsWithTicketsCount = (postsList: any[]) => {
     if (!Array.isArray(postsList)) return 0
     return postsList.filter((p) => {
@@ -147,13 +145,13 @@ export default function HomePage() {
     }
   }
 
- const executeJackpotDraw = async () => {
+  const executeJackpotDraw = async () => {
     try {
       const res = await fetch('/api/draw', { method: 'POST' })
       const data = await res.json().catch(() => null)
 
       if (data && data.success && data.executed && data.winner) {
-        const winnerData = data.winner // 🟢 Παίρνουμε τον πραγματικό νικητή από το API
+        const winnerData = data.winner
 
         setLastWinner(winnerData)
         localStorage.setItem('ugc_last_winner', JSON.stringify(winnerData))
@@ -205,7 +203,6 @@ export default function HomePage() {
 
     fetchFeedData()
 
-    // 🟢 1. Συνάρτηση υπολογισμού δευτερολέπτων μέχρι την επόμενη ακριβώς ώρα (:00)
     const getSecondsUntilNextHour = () => {
       const now = new Date()
       const nextHour = new Date(now)
@@ -214,7 +211,6 @@ export default function HomePage() {
       return Math.max(1, Math.floor((nextHour.getTime() - now.getTime()) / 1000))
     }
 
-    // 🟢 2. Έλεγχος & Εκτέλεση Κλήρωσης
     const handleHourBoundary = async () => {
       try {
         const res = await fetch('/api/feed', { cache: 'no-store' })
@@ -241,15 +237,12 @@ export default function HomePage() {
       }
     }
 
-    // Αρχική ρύθμιση συγχρονισμένου χρόνου
     setTimeLeft(getSecondsUntilNextHour())
 
-    // 🟢 3. Interval που ενημερώνεται βάσει του πραγματικού ρολογιού (UTC)
     const timerInterval = setInterval(() => {
       const remainingSeconds = getSecondsUntilNextHour()
       setTimeLeft(remainingSeconds)
 
-      // Όταν φτάσει στην αλλαγή της ώρας
       if (remainingSeconds <= 1 || remainingSeconds >= 3599) {
         handleHourBoundary()
       }
@@ -282,7 +275,6 @@ export default function HomePage() {
     localStorage.setItem('ugc_lang', newLang)
   }
 
-  // 🟢 Μορφοποίηση Ώρας σε HH:MM:SS ή MM:SS
   const formatTime = (totalSeconds: number) => {
     const h = Math.floor(totalSeconds / 3600)
     const m = Math.floor((totalSeconds % 3600) / 60)
@@ -492,7 +484,6 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* 🏆 ΚΑΡΤΑ ΝΙΚΗΤΗ ΤΕΛΕΥΤΑΙΑΣ ΚΛΗΡΩΣΗΣ */}
         {lastWinner && (
           <div className="bg-gradient-to-r from-amber-950/60 via-slate-900 to-indigo-950/60 border-2 border-amber-500 p-5 rounded-2xl mb-8 shadow-2xl relative overflow-hidden">
             <div className="absolute top-2 right-3 text-3xl">👑</div>
@@ -510,7 +501,6 @@ export default function HomePage() {
               👤 {lastWinner.winner_name || (isEn ? 'Winner' : 'Νικητής')}
             </h3>
 
-            {/* ΤΙΤΛΟΣ & ΚΕΙΜΕΝΟ ΝΙΚΗΤΗΡΙΟΥ POST */}
             <div className="my-3 bg-black/40 p-3 rounded-xl border border-slate-800">
               {lastWinner.post_title && (
                 <h4 className="text-sm font-extrabold text-amber-300 mb-1" suppressHydrationWarning>
@@ -531,7 +521,6 @@ export default function HomePage() {
               )}
             </div>
 
-            {/* 💰 ΑΝΑΛΥΣΗ ΚΕΡΔΩΝ: 70% CREATOR & 30% SUPPORTERS */}
             <div className="grid grid-cols-2 gap-2 my-3 text-xs">
               <div className="bg-emerald-950/40 border border-emerald-500/30 p-2.5 rounded-xl">
                 <span className="text-[10px] text-emerald-400 font-bold uppercase block">🎨 Creator Prize (70%):</span>
@@ -547,37 +536,37 @@ export default function HomePage() {
               </div>
             </div>
 
-           {/* 👥 ΨΗΦΟΦΟΡΟΙ / ΥΠΟΣΤΗΡΙΖΟΝΤΕΣ ΝΙΚΗΤΗ */}
-          {lastWinner.supporters && lastWinner.supporters.length > 0 && (
+            {lastWinner.supporters && lastWinner.supporters.length > 0 && (
               <div className="mb-2 text-left border-t border-slate-800 pt-2">
                 <span className="text-[10px] text-amber-400 font-bold uppercase block mb-1.5">
-                 👥 {isEn ? 'Winning Supporters & Earnings:' : 'Υποστηρικτές & Κέρδη:'}
+                  👥 {isEn ? 'Winning Supporters & Earnings:' : 'Υποστηρικτές & Κέρδη:'}
                 </span>
                 <div className="flex flex-wrap gap-2">
                   {lastWinner.supporters.map((sup: any, idx: number) => {
-                    // 🟢 Καθαρισμός ονόματος υποστηρικτή
-                     const supporterName = sup.username || sup.name || sup.full_name || (sup.email ? sup.email.split('@')[0] : 'Supporter')
-        
-                 return (
-                   <div
+                    const supporterName = sup.username || sup.name || sup.full_name || (sup.email ? sup.email.split('@')[0] : 'Supporter')
+                    return (
+                      <div
                         key={`sup-win-${idx}`}
                         className="bg-slate-950 border border-emerald-500/40 px-2.5 py-1 rounded-xl text-xs flex items-center gap-1.5 shadow-sm"
-                    >
+                      >
                         <span className="text-slate-300 font-medium">👤 {supporterName}:</span>
                         <span className="text-emerald-400 font-black font-mono">
                           +€{(Number(sup.prizeWon || sup.amount) || 0).toFixed(2)}
                         </span>
                         {sup.tickets && (
-                           <span className="text-[10px] text-slate-500 font-mono">
-                             ({sup.tickets} 🎟️)
-                           </span>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            ({sup.tickets} 🎟️)
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
-            )} 
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl font-black tracking-tight" suppressHydrationWarning>
