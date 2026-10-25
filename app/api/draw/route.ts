@@ -5,11 +5,12 @@ export const dynamic = 'force-dynamic'
 
 async function executeDraw() {
   // 1. Φέρνουμε όλα τα ενεργά posts που έχουν ΤΟΥΛΑΧΙΣΤΟΝ 1 λαχνό (>0)
-  const activePosts = await prisma.post.findMany({
+  // 🟢 Χρήση `prisma.posts` αντί για `prisma.post`
+  const activePosts = await prisma.posts.findMany({
     where: {
       status: 'ACTIVE',
       ticketsCount: {
-        gt: 0, // 🟢 Μόνο posts με αγορασμένους λαχνούς
+        gt: 0,
       },
     },
     include: {
@@ -28,8 +29,8 @@ async function executeDraw() {
     }
   }
 
-  // 3. Συγκέντρωση όλων των εγκύρων tickets από τα ενεργά posts
-  const allTickets = activePosts.flatMap((post) => post.tickets)
+  // 3. Συγκέντρωση όλων των εγκύρων tickets από τα ενεργά posts (με ρητό τύπο)
+  const allTickets = activePosts.flatMap((post: any) => post.tickets || [])
 
   if (allTickets.length === 0) {
     return {
@@ -43,20 +44,19 @@ async function executeDraw() {
   const randomIndex = Math.floor(Math.random() * allTickets.length)
   const winningTicket = allTickets[randomIndex]
 
-  // 5. Βρίσκουμε το post και τον χρήστη που κέρδισε
-  const winningPost = activePosts.find((p) => p.id === winningTicket.postId)
+  // 5. Βρίσκουμε το post και τον χρήστη που κέρδισε (με ρητό τύπο)
+  const winningPost = activePosts.find((p: any) => p.id === winningTicket.postId)
   const winnerUser = winningPost?.author
 
-  // 6. Ενημέρωση των posts στη βάση (κλείσιμο της τρέχουσας κλήρωσης)
-  const activePostIds = activePosts.map((p) => p.id)
+  // 6. Ενημέρωση των posts στη βάση (με ρητό τύπο)
+  const activePostIds = activePosts.map((p: any) => p.id)
 
   await prisma.$transaction([
-    // Αλλαγή status των συμμετεχόντων posts σε COMPLETED
-    prisma.post.updateMany({
+    // 🟢 Χρήση `prisma.posts` αντί για `prisma.post`
+    prisma.posts.updateMany({
       where: { id: { in: activePostIds } },
       data: { status: 'COMPLETED' },
     }),
-    // Πίστωση του νικητή (παράδειγμα: +50€ στο wallet_balance αν υπάρχει ο χρήστης)
     ...(winnerUser
       ? [
           prisma.users.update({
@@ -86,8 +86,7 @@ async function executeDraw() {
   }
 }
 
-// 🟢 GET Endpoint: Καλείται αυτόματα από το Vercel Cron κάθε ακριβώς ώρα (:00)
-export async function GET(req: Request) {
+export async function GET() {
   try {
     const result = await executeDraw()
     return NextResponse.json(result)
@@ -100,8 +99,7 @@ export async function GET(req: Request) {
   }
 }
 
-// 🟢 POST Endpoint: Για χειροκίνητη κλήρωση αν χρειαστεί από το Admin Panel
-export async function POST(req: Request) {
+export async function POST() {
   try {
     const result = await executeDraw()
     return NextResponse.json(result)
