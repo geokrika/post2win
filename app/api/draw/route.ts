@@ -5,12 +5,12 @@ export const dynamic = 'force-dynamic'
 
 async function executeDraw() {
   // 1. Φέρνουμε όλα τα ενεργά posts που έχουν ΤΟΥΛΑΧΙΣΤΟΝ 1 λαχνό (>0)
-  // 🟢 Χρήση `prisma.posts` αντί για `prisma.post`
+  // 🟢 Χρήση `prisma.posts` (πληθυντικός)
   const activePosts = await prisma.posts.findMany({
     where: {
       status: 'ACTIVE',
       ticketsCount: {
-        gt: 0,
+        gt: 0, // 🟢 Μόνο posts με αγορασμένους λαχνούς
       },
     },
     include: {
@@ -29,7 +29,7 @@ async function executeDraw() {
     }
   }
 
-  // 3. Συγκέντρωση όλων των εγκύρων tickets από τα ενεργά posts (με ρητό τύπο)
+  // 3. Συγκέντρωση όλων των εγκύρων tickets από τα ενεργά posts (με ρητό τύπο : any)
   const allTickets = activePosts.flatMap((post: any) => post.tickets || [])
 
   if (allTickets.length === 0) {
@@ -44,19 +44,20 @@ async function executeDraw() {
   const randomIndex = Math.floor(Math.random() * allTickets.length)
   const winningTicket = allTickets[randomIndex]
 
-  // 5. Βρίσκουμε το post και τον χρήστη που κέρδισε (με ρητό τύπο)
+  // 5. Βρίσκουμε το post και τον χρήστη που κέρδισε (με ρητό τύπο : any)
   const winningPost = activePosts.find((p: any) => p.id === winningTicket.postId)
   const winnerUser = winningPost?.author
 
-  // 6. Ενημέρωση των posts στη βάση (με ρητό τύπο)
+  // 6. Ενημέρωση των posts στη βάση (με ρητό τύπο : any)
   const activePostIds = activePosts.map((p: any) => p.id)
 
   await prisma.$transaction([
-    // 🟢 Χρήση `prisma.posts` αντί για `prisma.post`
+    // 🟢 Χρήση `prisma.posts` (πληθυντικός)
     prisma.posts.updateMany({
       where: { id: { in: activePostIds } },
       data: { status: 'COMPLETED' },
     }),
+    // Πίστωση του νικητή (+50€ στο wallet_balance)
     ...(winnerUser
       ? [
           prisma.users.update({
@@ -86,6 +87,7 @@ async function executeDraw() {
   }
 }
 
+// 🟢 GET Endpoint: Καλείται αυτόματα από το Vercel Cron κάθε ακριβώς ώρα (:00)
 export async function GET() {
   try {
     const result = await executeDraw()
@@ -99,6 +101,7 @@ export async function GET() {
   }
 }
 
+// 🟢 POST Endpoint: Για χειροκίνητη κλήρωση αν χρειαστεί από το Admin Panel
 export async function POST() {
   try {
     const result = await executeDraw()
