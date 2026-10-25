@@ -33,8 +33,8 @@ export default function HomePage() {
   const [isSlotDrawOpen, setIsSlotDrawOpen] = useState(false)
   const [isMyPostsOpen, setIsMyPostsOpen] = useState(false)
   
-  // ⏱️ Κύκλος 50 λεπτών = 3000 δευτερόλεπτα
-  const [timeLeft, setTimeLeft] = useState<number>(3000)
+  // ⏱️ Συγχρονισμένη αντίστροφη μέτρηση μέχρι το επόμενο top of the hour (:00)
+  const [timeLeft, setTimeLeft] = useState<number>(3600)
   const [drawCancelledMessage, setDrawCancelledMessage] = useState<string | null>(null)
 
   const handleOpenLogin = () => {
@@ -59,8 +59,13 @@ export default function HomePage() {
     setIsCreatePostOpen(true)
   }
 
-  const getActivePostsCount = (postsList: any[]) => {
-    return Array.isArray(postsList) ? postsList.length : 0
+  // 🟢 Υπολογισμός ενεργών posts που έχουν ΤΟΥΛΑΧΙΣΤΟΝ 1 λαχνό (>0)
+  const getActivePostsWithTicketsCount = (postsList: any[]) => {
+    if (!Array.isArray(postsList)) return 0
+    return postsList.filter((p) => {
+      const tickets = p.ticketsCount ?? p.votes?.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 0), 0) ?? 0
+      return (p.status === 'ACTIVE' || !p.status) && tickets > 0
+    }).length
   }
 
   const getCleanUsername = (uObj: any) => {
@@ -144,23 +149,23 @@ export default function HomePage() {
 
   const executeJackpotDraw = async () => {
     try {
-      const res = await fetch('/api/jackpot/draw', { method: 'POST' })
+      const res = await fetch('/api/draw', { method: 'POST' })
       const data = await res.json().catch(() => null)
 
-      if (data && data.success) {
+      if (data && data.success && data.executed) {
         const winnerObj = data.winner
 
         const winnerData = {
           id: 'win-' + Date.now(),
           winner_name: winnerObj.username,
-          winner_id: winnerObj.id,
-          post_title: winnerObj.postTitle || 'Untitled Post',
-          post_text: winnerObj.postText || '',
-          post_media: winnerObj.postMedia || null,
-          total_jackpot: winnerObj.totalJackpot || winnerObj.prize || 50,
-          creator_prize: winnerObj.creatorPrize || winnerObj.prize || 35,
-          supporters_pool: winnerObj.supportersPool || 15,
-          supporters: winnerObj.supporters || [],
+          winner_id: winnerObj.userId,
+          post_title: 'Winning Post',
+          post_text: '',
+          post_media: null,
+          total_jackpot: 50.00,
+          creator_prize: 35.00,
+          supporters_pool: 15.00,
+          supporters: [],
           date: new Date().toLocaleString(lang === 'en' ? 'en-US' : 'el-GR'),
         }
 
@@ -179,6 +184,12 @@ export default function HomePage() {
 
         if (user?.id) refreshUserData(user.id)
         await fetchFeedData()
+      } else if (data && !data.executed) {
+        setDrawCancelledMessage(
+          lang === 'en'
+            ? `⚠️ ${data.message}`
+            : `⚠️ ${data.message}`
+        )
       }
     } catch (err) {
       console.error('Error executing draw:', err)
@@ -212,38 +223,54 @@ export default function HomePage() {
 
     fetchFeedData()
 
-    const calculateTimeLeftInFiftyMinutes = () => {
+    // 🟢 1. Συνάρτηση υπολογισμού δευτερολέπτων μέχρι την επόμενη ακριβώς ώρα (:00)
+    const getSecondsUntilNextHour = () => {
       const now = new Date()
-      const totalSecondsInDay = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()
-      const remainingSeconds = 3000 - (totalSecondsInDay % 3000)
-      return remainingSeconds
+      const nextHour = new Date(now)
+      nextHour.setMinutes(0, 0, 0)
+      nextHour.setHours(nextHour.getHours() + 1)
+      return Math.max(1, Math.floor((nextHour.getTime() - now.getTime()) / 1000))
     }
 
-    setTimeLeft(calculateTimeLeftInFiftyMinutes())
+    // 🟢 2. Έλεγχος & Εκτέλεση Κλήρωσης
+    const handleHourBoundary = async () => {
+      try {
+        const res = await fetch('/api/feed', { cache: 'no-store' })
+        const data = await res.json().catch(() => null)
+        const currentPosts = data?.posts || []
 
-    const timerInterval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          const currentPosts = JSON.parse(localStorage.getItem('ugc_posts') || '[]')
-          const activeCount = Array.isArray(currentPosts) ? currentPosts.length : 0
+        const postsWithTickets = currentPosts.filter((p: any) => {
+          const tickets = p.ticketsCount ?? p.votes?.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 0), 0) ?? 0
+          return tickets > 0
+        })
 
-          if (activeCount >= 4) {
-            setDrawCancelledMessage(null)
-            setIsSlotDrawOpen(true)
-            //;(async () => {
-            //  await executeJackpotDraw()
-            //})()
-          } else {
-            setDrawCancelledMessage(
-              lang === 'en'
-                ? `⚠️ Draw postponed: Requires at least 4 active posts (currently ${activeCount}/4).`
-                : `⚠️ Η κλήρωση αναβλήθηκε: Απαιτούνται τουλάχιστον 4 ενεργά posts (αυτή τη στιγμή ${activeCount}/4).`
-            )
-          }
-          return 3000
+        if (postsWithTickets.length >= 4) {
+          setDrawCancelledMessage(null)
+          setIsSlotDrawOpen(true)
+        } else {
+          setDrawCancelledMessage(
+            lang === 'en'
+              ? `⚠️ Draw postponed: Requires at least 4 active posts with tickets (currently ${postsWithTickets.length}/4).`
+              : `⚠️ Η κλήρωση αναβλήθηκε: Απαιτούνται τουλάχιστον 4 ενεργά posts με λαχνούς (αυτή τη στιγμή ${postsWithTickets.length}/4).`
+          )
         }
-        return prev - 1
-      })
+      } catch (e) {
+        console.error('Boundary check error:', e)
+      }
+    }
+
+    // Αρχική ρύθμιση συγχρονισμένου χρόνου
+    setTimeLeft(getSecondsUntilNextHour())
+
+    // 🟢 3. Interval που ενημερώνεται βάσει του πραγματικού ρολογιού (UTC)
+    const timerInterval = setInterval(() => {
+      const remainingSeconds = getSecondsUntilNextHour()
+      setTimeLeft(remainingSeconds)
+
+      // Όταν φτάσει στην αλλαγή της ώρας
+      if (remainingSeconds <= 1 || remainingSeconds >= 3599) {
+        handleHourBoundary()
+      }
     }, 1000)
 
     const feedInterval = setInterval(() => {
@@ -273,9 +300,15 @@ export default function HomePage() {
     localStorage.setItem('ugc_lang', newLang)
   }
 
+  // 🟢 Μορφοποίηση Ώρας σε HH:MM:SS ή MM:SS
   const formatTime = (totalSeconds: number) => {
-    const m = Math.floor(totalSeconds / 60)
+    const h = Math.floor(totalSeconds / 3600)
+    const m = Math.floor((totalSeconds % 3600) / 60)
     const s = totalSeconds % 60
+
+    if (h > 0) {
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+    }
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   }
 
@@ -392,7 +425,7 @@ export default function HomePage() {
   if (!isMounted) return null
 
   const isEn = lang === 'en'
-  const activePostsCount = getActivePostsCount(posts)
+  const activePostsCount = getActivePostsWithTicketsCount(posts)
 
   const myPostsCount = user?.id
     ? posts.filter((p) => p.user_id === user.id || p.users?.id === user.id).length
@@ -457,7 +490,7 @@ export default function HomePage() {
             <span className="text-2xl animate-spin">⏳</span>
             <div>
               <span className="text-[11px] text-slate-400 font-semibold block uppercase tracking-wider">
-                {isEn ? 'Next 50-Min Draw in:' : 'Επόμενη Κλήρωση (50λ) σε:'}
+                {isEn ? 'Next Hourly Draw in:' : 'Επόμενη Ωριαία Κλήρωση σε:'}
               </span>
               <span className="text-xl font-black text-amber-400 font-mono tracking-widest">
                 {formatTime(timeLeft)}
@@ -466,20 +499,6 @@ export default function HomePage() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* ⚡ ΚΟΥΜΠΙ FORCE DRAW (ΣΕ ΣΧΟΛΙΟ)
-            <button
-              onClick={async () => {
-                if (confirm(isEn ? 'Force draw now?' : 'Εκτέλεση άμεσης κλήρωσης τώρα;')) {
-                  setIsSlotDrawOpen(true)
-                  await executeJackpotDraw()
-                }
-              }}
-              className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black px-3 py-2 rounded-xl text-xs flex items-center gap-1 transition-all shadow-md cursor-pointer"
-            >
-              ⚡ Force Draw
-            </button>
-            */}
-
             <button
               onClick={() => setIsHistoryOpen(true)}
               className="bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold px-4 py-2 rounded-xl text-xs border border-amber-500/20 flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
@@ -579,7 +598,7 @@ export default function HomePage() {
               {isEn ? '🔥 Live Content Feed' : '🔥 Ζωντανή Ροή Περιεχομένου'}
             </h1>
             <p className="text-xs text-slate-400 font-medium" suppressHydrationWarning>
-              {isEn ? `Active Posts in Current Jackpot Pool: ${activePostsCount}/4 min` : `Ενεργά δημοσιεύματα στην τρέχουσα κλήρωση: ${activePostsCount}/4 ελάχιστο`}
+              {isEn ? `Active Posts with Tickets in Pool: ${activePostsCount}/4 min` : `Ενεργά δημοσιεύματα με λαχνούς στην κλήρωση: ${activePostsCount}/4 ελάχιστο`}
             </p>
           </div>
 
