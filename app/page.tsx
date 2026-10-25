@@ -147,27 +147,13 @@ export default function HomePage() {
     }
   }
 
-  const executeJackpotDraw = async () => {
+ const executeJackpotDraw = async () => {
     try {
       const res = await fetch('/api/draw', { method: 'POST' })
       const data = await res.json().catch(() => null)
 
-      if (data && data.success && data.executed) {
-        const winnerObj = data.winner
-
-        const winnerData = {
-          id: 'win-' + Date.now(),
-          winner_name: winnerObj.username,
-          winner_id: winnerObj.userId,
-          post_title: 'Winning Post',
-          post_text: '',
-          post_media: null,
-          total_jackpot: 50.00,
-          creator_prize: 35.00,
-          supporters_pool: 15.00,
-          supporters: [],
-          date: new Date().toLocaleString(lang === 'en' ? 'en-US' : 'el-GR'),
-        }
+      if (data && data.success && data.executed && data.winner) {
+        const winnerData = data.winner // 🟢 Παίρνουμε τον πραγματικό νικητή από το API
 
         setLastWinner(winnerData)
         localStorage.setItem('ugc_last_winner', JSON.stringify(winnerData))
@@ -185,11 +171,7 @@ export default function HomePage() {
         if (user?.id) refreshUserData(user.id)
         await fetchFeedData()
       } else if (data && !data.executed) {
-        setDrawCancelledMessage(
-          lang === 'en'
-            ? `⚠️ ${data.message}`
-            : `⚠️ ${data.message}`
-        )
+        setDrawCancelledMessage(`⚠️ ${data.message}`)
       }
     } catch (err) {
       console.error('Error executing draw:', err)
@@ -565,33 +547,37 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* 👥 ΨΗΦΟΦΟΡΟΙ / ΥΠΟΣΤΗΡΙΖΟΝΤΕΣ ΝΙΚΗΤΗ & ΤΟ ΚΕΡΔΟΣ ΤΟΥΣ */}
-            {lastWinner.supporters && lastWinner.supporters.length > 0 && (
+           {/* 👥 ΨΗΦΟΦΟΡΟΙ / ΥΠΟΣΤΗΡΙΖΟΝΤΕΣ ΝΙΚΗΤΗ */}
+          {lastWinner.supporters && lastWinner.supporters.length > 0 && (
               <div className="mb-2 text-left border-t border-slate-800 pt-2">
                 <span className="text-[10px] text-amber-400 font-bold uppercase block mb-1.5">
-                  👥 {isEn ? 'Winning Supporters & Earnings:' : 'Υποστηρικτές & Κέρδη:'}
+                 👥 {isEn ? 'Winning Supporters & Earnings:' : 'Υποστηρικτές & Κέρδη:'}
                 </span>
                 <div className="flex flex-wrap gap-2">
-                  {lastWinner.supporters.map((sup: any, idx: number) => (
-                    <div
-                      key={`sup-win-${idx}`}
-                      className="bg-slate-950 border border-emerald-500/40 px-2.5 py-1 rounded-xl text-xs flex items-center gap-1.5 shadow-sm"
+                  {lastWinner.supporters.map((sup: any, idx: number) => {
+                    // 🟢 Καθαρισμός ονόματος υποστηρικτή
+                     const supporterName = sup.username || sup.name || sup.full_name || (sup.email ? sup.email.split('@')[0] : 'Supporter')
+        
+                 return (
+                   <div
+                        key={`sup-win-${idx}`}
+                        className="bg-slate-950 border border-emerald-500/40 px-2.5 py-1 rounded-xl text-xs flex items-center gap-1.5 shadow-sm"
                     >
-                      <span className="text-slate-300 font-medium">👤 {sup.username}:</span>
-                      <span className="text-emerald-400 font-black font-mono">
-                        +€{(Number(sup.prizeWon) || 0).toFixed(2)}
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-mono">
-                        ({sup.tickets} 🎟️)
-                      </span>
-                    </div>
-                  ))}
+                        <span className="text-slate-300 font-medium">👤 {supporterName}:</span>
+                        <span className="text-emerald-400 font-black font-mono">
+                          +€{(Number(sup.prizeWon || sup.amount) || 0).toFixed(2)}
+                        </span>
+                        {sup.tickets && (
+                           <span className="text-[10px] text-slate-500 font-mono">
+                             ({sup.tickets} 🎟️)
+                           </span>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
-
+            )} 
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-2xl font-black tracking-tight" suppressHydrationWarning>
