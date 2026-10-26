@@ -32,10 +32,16 @@ export default function AuthModal({
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
+  // 🟢 Επαναφορά φόρμας και ενημέρωση mode κατά το άνοιγμα
   useEffect(() => {
     if (isOpen) {
       setMode(propMode || initialMode)
       setError(null)
+      setFullName('')
+      setUsername('')
+      setEmail('')
+      setPhone('')
+      setPassword('')
     }
   }, [propMode, initialMode, isOpen])
 
@@ -50,9 +56,9 @@ export default function AuthModal({
     if (onSwitchMode) onSwitchMode(newMode)
   }
 
-  // 🟢 Αποθήκευση πραγματικού χρήστη που επιστρέφει η βάση
+  // 🟢 Αποθήκευση χρήστη στο LocalStorage και ολοκλήρωση
   const saveAndCompleteUser = (rawUserData: any) => {
-    if (!rawUserData || !rawUserData.id) {
+    if (!rawUserData || (!rawUserData.id && !rawUserData.user_id)) {
       setError(isEn ? 'Invalid user data received from server.' : 'Μη έγκυρα δεδομένα χρήστη από τον διακομιστή.')
       return
     }
@@ -61,8 +67,8 @@ export default function AuthModal({
 
     const cleanUser = {
       id: rawUserData.id || rawUserData.user_id,
-      player_id: rawUserData.player_id,
-      username: rawUserData.username || rawUserData.full_name || rawUserData.email?.split('@')[0],
+      player_id: rawUserData.player_id || rawUserData.id,
+      username: rawUserData.username || rawUserData.full_name || rawUserData.email?.split('@')[0] || 'User',
       email: rawUserData.email || '',
       wallet_balance: Number(rawUserData.wallet_balance ?? 100.00)
     }
@@ -75,16 +81,15 @@ export default function AuthModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    setLoading(true)
 
-    try {
-      if (mode === 'register') {
-        if (!fullName.trim() || !username.trim() || !email.trim() || !password.trim()) {
-          setError(isEn ? 'Please fill in all required fields.' : 'Παρακαλώ συμπληρώστε όλα τα υποχρεωτικά πεδία.')
-          setLoading(false)
-          return
-        }
+    if (mode === 'register') {
+      if (!fullName.trim() || !username.trim() || !email.trim() || !password.trim()) {
+        setError(isEn ? 'Please fill in all required fields.' : 'Παρακαλώ συμπληρώστε όλα τα υποχρεωτικά πεδία.')
+        return
+      }
 
+      setLoading(true)
+      try {
         const res = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -97,7 +102,6 @@ export default function AuthModal({
           }),
         })
 
-        // 🔍 Ασφαλής ανάγνωση της απάντησης του Server
         const textResponse = await res.text()
         let data: any = {}
         
@@ -105,7 +109,7 @@ export default function AuthModal({
           data = JSON.parse(textResponse)
         } catch {
           console.error('Non-JSON response received:', textResponse)
-          setError(`Server Error Status ${res.status}: ${textResponse.slice(0, 120)}`)
+          setError(`Server Error Status ${res.status}`)
           setLoading(false)
           return
         }
@@ -117,14 +121,20 @@ export default function AuthModal({
         }
 
         saveAndCompleteUser(data.user)
+      } catch (err: any) {
+        setError(err.message || (isEn ? 'An error occurred during registration' : 'Σφάλμα κατά την εγγραφή'))
+      } finally {
+        setLoading(false)
+      }
 
-      } else {
-        if (!email.trim() || !password.trim()) {
-          setError(isEn ? 'Please fill in email and password.' : 'Παρακαλώ συμπληρώστε email και κωδικό.')
-          setLoading(false)
-          return
-        }
+    } else {
+      if (!email.trim() || !password.trim()) {
+        setError(isEn ? 'Please fill in email and password.' : 'Παρακαλώ συμπληρώστε email και κωδικό.')
+        return
+      }
 
+      setLoading(true)
+      try {
         const res = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -152,11 +162,11 @@ export default function AuthModal({
         }
 
         saveAndCompleteUser(data.user)
+      } catch (err: any) {
+        setError(err.message || (isEn ? 'An error occurred during login' : 'Σφάλμα κατά τη σύνδεση'))
+      } finally {
+        setLoading(false)
       }
-    } catch (err: any) {
-      setError(err.message || (isEn ? 'An error occurred' : 'Σφάλμα κατά την επεξεργασία'))
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -167,7 +177,7 @@ export default function AuthModal({
         <button
           type="button"
           onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-white font-bold text-lg cursor-pointer"
+          className="absolute top-4 right-4 text-slate-400 hover:text-white font-bold text-lg cursor-pointer transition-colors"
         >
           ✕
         </button>
@@ -196,7 +206,7 @@ export default function AuthModal({
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder={isEn ? 'John Doe' : 'Γιώργος Παπαδόπουλος'}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500 transition-colors"
                 />
               </div>
 
@@ -209,7 +219,7 @@ export default function AuthModal({
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="username123"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500 transition-colors"
                 />
               </div>
             </>
@@ -224,7 +234,7 @@ export default function AuthModal({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="example@email.com"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500 transition-colors"
             />
           </div>
 
@@ -234,11 +244,11 @@ export default function AuthModal({
                 {isEn ? 'Phone Number' : 'Τηλέφωνο'}
               </label>
               <input
-                type="text"
+                type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="6912345678"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500 transition-colors"
               />
             </div>
           )}
@@ -252,14 +262,14 @@ export default function AuthModal({
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-amber-500 transition-colors"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black py-2.5 rounded-xl text-sm transition mt-2 cursor-pointer"
+            className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black py-2.5 rounded-xl text-sm transition mt-2 cursor-pointer disabled:opacity-50"
           >
             {loading
               ? '...'
@@ -273,7 +283,7 @@ export default function AuthModal({
           <button
             type="button"
             onClick={toggleMode}
-            className="text-xs text-slate-400 hover:text-amber-400 underline cursor-pointer"
+            className="text-xs text-slate-400 hover:text-amber-400 underline cursor-pointer transition-colors"
           >
             {mode === 'login'
               ? isEn ? "Don't have an account? Register" : 'Δεν έχετε λογαριασμό; Εγγραφή'

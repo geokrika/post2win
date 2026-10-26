@@ -9,7 +9,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Missing parameters' }, { status: 400 })
     }
 
-    // Φέρνουμε το αρχικό post
     const originalPost = await prisma.posts.findUnique({
       where: { id: originalPostId },
     })
@@ -18,7 +17,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Post not found' }, { status: 404 })
     }
 
-    // 🟢 Δημιουργία ΝΕΟΥ post για τον τρέχοντα κύκλο με 0 λαχνούς (is_active: true)
+    // 🟢 Δημιουργία ΝΕΟΥ post με 0 λαχνούς (is_active: true)
     const newPost = await prisma.posts.create({
       data: {
         user_id: userId,
@@ -28,9 +27,20 @@ export async function POST(req: Request) {
         file_type: originalPost.file_type,
         is_active: true,
       },
+      include: {
+        users: true,
+        votes: true,
+      },
     })
 
-    return NextResponse.json({ success: true, post: newPost })
+    return NextResponse.json({
+      success: true,
+      post: {
+        ...newPost,
+        votes: [], // 🟢 Εγγυημένα άδειο array για 0 λαχνούς
+        ticketsCount: 0,
+      },
+    })
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 })
   }

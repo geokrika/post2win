@@ -20,6 +20,7 @@ export default function MyPostsModal({
   const [posts, setPosts] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [repostingId, setRepostingId] = useState<string | null>(null)
 
   const isEn = lang === 'en'
 
@@ -46,24 +47,31 @@ export default function MyPostsModal({
     }
   }, [isOpen, userId])
 
-const handleRepost = async (postId: string) => {
-  try {
-    const res = await fetch('/api/posts/repost', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ originalPostId: postId, userId }),
-    })
-    const data = await res.json()
+  // 🟢 Επαναδημοσίευση με 0 λαχνούς στον τρέχοντα κύκλο
+  const handleRepost = async (postId: string) => {
+    setRepostingId(postId)
+    try {
+      const res = await fetch('/api/posts/repost', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ originalPostId: postId, userId }),
+      })
+      const data = await res.json()
 
-    if (data.success) {
-      alert(lang === 'en' ? 'Post republished with 0 tickets!' : 'Το δημοσίευμα επαναδημοσιεύθηκε με 0 λαχνούς!')
-      onClose()
-      window.location.reload()
+      if (data.success) {
+        localStorage.removeItem('ugc_posts')
+        if (onPostDeleted) onPostDeleted()
+        onClose()
+      } else {
+        alert(data.error || (isEn ? 'Repost failed' : 'Αποτυχία επαναδημοσίευσης'))
+      }
+    } catch (err) {
+      console.error('Repost error:', err)
+      alert(isEn ? 'Error reposting' : 'Σφάλμα κατά την επαναδημοσίευση')
+    } finally {
+      setRepostingId(null)
     }
-  } catch (err) {
-    console.error('Repost error:', err)
   }
-}
 
   // Διαγραφή Post από τη βάση
   const handleDeletePost = async (postId: string) => {
@@ -80,15 +88,14 @@ const handleRepost = async (postId: string) => {
       const data = await res.json()
 
       if (data.success) {
-        // Αφαίρεση από το τοπικό state
         setPosts((prev) => prev.filter((p) => p.id !== postId))
         if (onPostDeleted) onPostDeleted()
       } else {
-        alert(data.error || 'Αποτυχία διαγραφής')
+        alert(data.error || (isEn ? 'Delete failed' : 'Αποτυχία διαγραφής'))
       }
     } catch (err) {
       console.error('Error deleting post:', err)
-      alert('Σφάλμα κατά τη διαγραφή')
+      alert(isEn ? 'Error deleting post' : 'Σφάλμα κατά τη διαγραφή')
     } finally {
       setDeletingId(null)
     }
@@ -107,7 +114,7 @@ const handleRepost = async (postId: string) => {
           </h2>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-white font-bold text-lg p-1 cursor-pointer"
+            className="text-slate-400 hover:text-white font-bold text-lg p-1 cursor-pointer transition-colors"
           >
             ✕
           </button>
@@ -150,8 +157,8 @@ const handleRepost = async (postId: string) => {
                   </p>
                 </div>
 
-                {/* FOOTER & DELETE BUTTON */}
-                <div className="flex justify-between items-center pt-2 border-t border-slate-900">
+                {/* FOOTER & BUTTONS */}
+                <div className="flex justify-between items-center pt-2 border-t border-slate-900 gap-2">
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                     post.is_active 
                       ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' 
@@ -159,17 +166,40 @@ const handleRepost = async (postId: string) => {
                   }`}>
                     {post.is_active 
                       ? (isEn ? '● Active Pool' : '● Ενεργός Κύκλος') 
-                      : (isEn ? 'Drawn / History' : 'Ολοκληρώθηκε')}
+                      : (isEn ? 'Completed' : 'Ολοκληρώθηκε')}
                   </span>
 
-                  <button
-                    onClick={() => handleDeletePost(post.id)}
-                    disabled={deletingId === post.id}
-                    className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-bold px-3 py-1 rounded-xl text-xs flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
-                  >
-                    <span>🗑️</span>
-                    <span>{deletingId === post.id ? (isEn ? 'Deleting...' : 'Διαγραφή...') : (isEn ? 'Delete' : 'Διαγραφή')}</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {/* 🟢 ΚΟΥΜΠΙ REPOST (Εμφανίζεται σε ολοκληρωμένα ή παλιά posts) */}
+                    {!post.is_active && (
+                      <button
+                        onClick={() => handleRepost(post.id)}
+                        disabled={repostingId === post.id}
+                        className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold px-3 py-1 rounded-xl text-xs flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+                      >
+                        <span>🔄</span>
+                        <span>
+                          {repostingId === post.id 
+                            ? (isEn ? 'Reposting...' : 'Δημοσίευση...') 
+                            : (isEn ? 'Repost (0 🎟️)' : 'Επαναδημοσίευση (0 🎟️)')}
+                        </span>
+                      </button>
+                    )}
+
+                    {/* ΚΟΥΜΠΙ ΔΙΑΓΡΑΦΗΣ */}
+                    <button
+                      onClick={() => handleDeletePost(post.id)}
+                      disabled={deletingId === post.id}
+                      className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 font-bold px-3 py-1 rounded-xl text-xs flex items-center gap-1 transition cursor-pointer disabled:opacity-50"
+                    >
+                      <span>🗑️</span>
+                      <span>
+                        {deletingId === post.id 
+                          ? (isEn ? 'Deleting...' : 'Διαγραφή...') 
+                          : (isEn ? 'Delete' : 'Διαγραφή')}
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </div>
             ))
