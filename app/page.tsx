@@ -390,6 +390,22 @@ export default function HomePage() {
       </div>
     )
   }
+  const fetchWinnersHistory = async () => {
+    try {
+      const res = await fetch('/api/winners', { cache: 'no-store' })
+      const data = await res.json().catch(() => null)
+      if (data && data.success && Array.isArray(data.history)) {
+        setWinnersHistory(data.history)
+      }
+    } catch (err) {
+      console.error('Error fetching winners history:', err)
+    }
+   }
+
+  useEffect(() => {
+    // ... τα υπόλοιπα useEffect
+    fetchWinnersHistory()
+  }, [])
 
   const handleDrawComplete = async (winningPost: any, fallbackSupportersList: any[]) => {
     setIsSlotDrawOpen(false)
