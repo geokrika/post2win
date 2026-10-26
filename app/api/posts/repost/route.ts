@@ -1,36 +1,37 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
+import { prisma } from '@/lib/prisma'
 
 export async function POST(req: Request) {
   try {
-    const { userId, title, text_content, file_url, media_type } = await req.json()
+    const { originalPostId, userId } = await req.json()
 
-    // Δημιουργούμε νέο ενεργό post για τον τρέχοντα γύρο
-    const { data: newPost, error } = await supabase
-      .from('posts')
-      .insert({
-        user_id: userId,
-        title: title,
-        text_content: text_content,
-        file_url: file_url,
-        media_type: media_type,
-        status: 'ACTIVE',
-        hash_id: Math.random().toString(36).substring(2, 9),
-      })
-      .select('*, users(*), votes(*)')
-      .single()
-
-    if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    if (!originalPostId || !userId) {
+      return NextResponse.json({ success: false, error: 'Missing parameters' }, { status: 400 })
     }
 
-    return NextResponse.json({ success: true, post: newPost })
+    // Φέρνουμε το αρχικό post
+    const originalPost = await prisma.posts.findUnique({
+      where: { id: originalPostId },
+    })
 
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 })
+    if (!originalPost) {
+      return NextResponse.json({ success: false, error: 'Post not found' }, { status: 404 })
+    }
+
+    // 🟢 Δημιουργία ΝΕΟΥ post για τον τρέχοντα κύκλο με 0 λαχνούς (is_active: true)
+    const newPost = await prisma.posts.create({
+      data: {
+        user_id: userId,
+        title: originalPost.title,
+        text_content: originalPost.text_content,
+        file_url: originalPost.file_url,
+        file_type: originalPost.file_type,
+        is_active: true,
+      },
+    })
+
+    return NextResponse.json({ success: true, post: newPost })
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
   }
 }

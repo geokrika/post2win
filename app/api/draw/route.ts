@@ -4,17 +4,13 @@ import { prisma } from '@/lib/prisma'
 export const dynamic = 'force-dynamic'
 
 async function executeDraw() {
-  // 1. Φέρνουμε τα ενεργά posts μαζί με δημιουργό (users) και υποστηρικτές (votes)
+  // 1. Φέρνουμε τα ενεργά posts μαζί με τον δημιουργό και τους λαχνούς/υποστηρικτές
   const activePosts = await prisma.posts.findMany({
-    where: {
-      is_active: true,
-    },
+    where: { is_active: true },
     include: {
       users: true,
       votes: {
-        include: {
-          users: true,
-        },
+        include: { users: true },
       },
     },
   })
@@ -28,26 +24,32 @@ async function executeDraw() {
     }
   }
 
-  // 2. Επιλογή τυχαίου νικητή
+  // 2. Συγκέντρωση όλων των λαχνών για υπολογισμό Jackpot
+  let totalTicketsInPool = 0
+  activePosts.forEach((p: any) => {
+    const postTickets = p.votes?.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0) || 0
+    totalTicketsInPool += postTickets
+  })
+
+  // 💰 Δυναμικός υπολογισμός πραγματικού Jackpot (€50 βάση + €0.90 ανά λαχνό)
+  const totalJackpot = Number((50.00 + totalTicketsInPool * 0.90).toFixed(2))
+  const creatorPrize = Number((totalJackpot * 0.70).toFixed(2))
+  const supportersPool = Number((totalJackpot * 0.30).toFixed(2))
+
+  // 3. Επιλογή τυχαίου νικητήριου post
   const randomIndex = Math.floor(Math.random() * activePosts.length)
   const winningPost: any = activePosts[randomIndex]
   const winnerUser = winningPost?.users
 
-  // 3. Υπολογισμός συνολικού Jackpot και υποστηρικτών νικητή
-  const postVotes = winningPost?.votes || []
-  const totalTickets = postVotes.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0)
-  
-  // Υπολογισμός Jackpot Pool (50€ βάση + 0.90€ ανά λαχνό)
-  const totalJackpot = Number((50.00 + totalTickets * 0.90).toFixed(2))
-  const creatorPrize = Number((totalJackpot * 0.70).toFixed(2))
-  const supportersPool = Number((totalJackpot * 0.30).toFixed(2))
+  // 4. Υπολογισμός μεριδίου για κάθε υποστηρικτή του ΝΙΚΗΤΗΡΙΟΥ post
+  const winningVotes = winningPost?.votes || []
+  const winningPostTickets = winningVotes.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0)
 
-  // 4. Επεξεργασία λίστας Υποστηρικτών με τα κέρδη τους
-  const supportersList = postVotes.map((v: any) => {
+  const supportersList = winningVotes.map((v: any) => {
     const supUser = v.users || {}
     const supName = supUser.username || supUser.full_name || (supUser.email ? supUser.email.split('@')[0] : 'Supporter')
     const userTickets = Number(v.tickets_earned) || 1
-    const prizeWon = totalTickets > 0 ? Number(((userTickets / totalTickets) * supportersPool).toFixed(2)) : 0
+    const prizeWon = winningPostTickets > 0 ? Number(((userTickets / winningPostTickets) * supportersPool).toFixed(2)) : 0
 
     return {
       userId: supUser.id,
@@ -57,23 +59,39 @@ async function executeDraw() {
     }
   })
 
-  // 5. Ενημέρωση Βάσης Δεδομένων
+  // 5. Database Transaction: Ενημέρωση υπολοίπων & Απενεργοποίηση posts
   const activePostIds = activePosts.map((p: any) => p.id)
 
-  await prisma.$transaction([
+  const transactionQueries: any[] = [
     prisma.posts.updateMany({
       where: { id: { in: activePostIds } },
       data: { is_active: false },
     }),
-    ...(winnerUser
-      ? [
-          prisma.users.update({
-            where: { id: winnerUser.id },
-            data: { wallet_balance: { increment: creatorPrize } },
-          }),
-        ]
-      : []),
-  ])
+  ]
+
+  // Πίστωση Creator (70%)
+  if (winnerUser?.id) {
+    transactionQueries.push(
+      prisma.users.update({
+        where: { id: winnerUser.id },
+        data: { wallet_balance: { increment: creatorPrize } },
+      })
+    )
+  }
+
+  // Πίστωση Υποστηρικτών (30% αναλογικά)
+  supportersList.forEach((sup: any) => {
+    if (sup.userId && sup.prizeWon > 0) {
+      transactionQueries.push(
+        prisma.users.update({
+          where: { id: sup.userId },
+          data: { wallet_balance: { increment: sup.prizeWon } },
+        })
+      )
+    }
+  })
+
+  await prisma.$transaction(transactionQueries)
 
   const winnerName = winnerUser?.username || winnerUser?.full_name || (winnerUser?.email ? winnerUser.email.split('@')[0] : 'Winner')
 
@@ -88,10 +106,11 @@ async function executeDraw() {
       post_title: winningPost.title || 'Untitled Post',
       post_text: winningPost.text_content || '',
       post_media: winningPost.file_url || null,
+      file_type: winningPost.file_type || null,
       total_jackpot: totalJackpot,
       creator_prize: creatorPrize,
       supporters_pool: supportersPool,
-      supporters: supportersList, // 🟢 Πλήρης λίστα υποστηρικτών με ονόματα & ποσά
+      supporters: supportersList,
       date: new Date().toLocaleString('el-GR'),
     },
     totalPostsCount: activePosts.length,

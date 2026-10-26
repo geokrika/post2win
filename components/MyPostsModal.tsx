@@ -46,6 +46,25 @@ export default function MyPostsModal({
     }
   }, [isOpen, userId])
 
+const handleRepost = async (postId: string) => {
+  try {
+    const res = await fetch('/api/posts/repost', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ originalPostId: postId, userId }),
+    })
+    const data = await res.json()
+
+    if (data.success) {
+      alert(lang === 'en' ? 'Post republished with 0 tickets!' : 'Το δημοσίευμα επαναδημοσιεύθηκε με 0 λαχνούς!')
+      onClose()
+      window.location.reload()
+    }
+  } catch (err) {
+    console.error('Repost error:', err)
+  }
+}
+
   // Διαγραφή Post από τη βάση
   const handleDeletePost = async (postId: string) => {
     if (!confirm(isEn ? 'Are you sure you want to delete this post?' : 'Είστε σίγουροι ότι θέλετε να διαγράψετε αυτό το post;')) {
