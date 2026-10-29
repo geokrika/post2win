@@ -32,16 +32,32 @@ export default function SlotDrawModal({
   // Υπολογισμός Συνολικών Λαχνών (Total Tickets)
   const totalTickets = posts.reduce((acc, post) => {
     const votes = post.votes || []
-    return acc + votes.reduce((vAcc: number, v: any) => vAcc + (Number(v.tickets_earned) || 1), 0)
+    const postTickets = votes.reduce((vAcc: number, v: any) => vAcc + (Number(v.tickets_earned) || 1), 0)
+    return acc + (postTickets > 0 ? postTickets : 1)
   }, 0)
+
+  // 🎟️ Δημιουργία Weighted Pool για την επιλογή νικητή βάσει λαχνών
+  const pickWeightedWinner = () => {
+    const ticketPool: any[] = []
+    posts.forEach((post) => {
+      const votes = post.votes || []
+      const postTickets = votes.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0)
+      const count = postTickets > 0 ? postTickets : 1
+      for (let i = 0; i < count; i++) {
+        ticketPool.push(post)
+      }
+    })
+    if (ticketPool.length === 0) return posts[0]
+    const randomIndex = Math.floor(Math.random() * ticketPool.length)
+    return ticketPool[randomIndex]
+  }
 
   useEffect(() => {
     if (!isOpen || !posts || posts.length === 0) {
-      startTimeRef.current = null // Reset μόνο όταν κλείνει εντελώς η κλήρωση
+      startTimeRef.current = null
       return
     }
 
-    // Αν είναι η πρώτη φορά που ανοίγει, καταγράφουμε τη στιγμή έναρξης
     if (!startTimeRef.current) {
       startTimeRef.current = Date.now()
       isCompletedRef.current = false
@@ -49,7 +65,7 @@ export default function SlotDrawModal({
       setWinner(null)
     }
 
-    const TOTAL_DURATION = 70000 // 70 δευτερόλεπτα συνολικά
+    const TOTAL_DURATION = 70000 // 70 δευτερόλεπτα
 
     const timerInterval = setInterval(() => {
       if (!startTimeRef.current) return
@@ -59,18 +75,18 @@ export default function SlotDrawModal({
       
       setSecondsLeft(remaining)
 
-      // 1. Φάση Προετοιμασίας (0 - 10s)
+      // 1. Προετοιμασία (0 - 10s)
       if (elapsed < 10000) {
         setPhase('warmup')
       } 
-      // 2. Φάση Περιστροφής (10s - 50s)
+      // 2. Περιστροφή (10s - 50s)
       else if (elapsed < 50000) {
         setPhase('spinning')
       } 
-      // 3. Φάση Νικητή (50s - 70s)
+      // 3. Ανακοίνωση Νικητή (50s - 70s)
       else if (elapsed < 70000) {
         if (!winnerRef.current) {
-          const picked = posts[Math.floor(Math.random() * posts.length)]
+          const picked = pickWeightedWinner()
           winnerRef.current = picked
           setWinner(picked)
         }
@@ -102,7 +118,6 @@ export default function SlotDrawModal({
     const spin = () => {
       setCurrentIndex((prev) => (prev + 1) % posts.length)
 
-      // Σταδιακή επιβράδυνση καθώς πλησιάζουμε στο τέλος της περιστροφής
       if (secondsLeft <= 25 && secondsLeft > 20) {
         speed += 12
       }
@@ -115,9 +130,8 @@ export default function SlotDrawModal({
     return () => clearTimeout(timeoutId)
   }, [isOpen, phase, secondsLeft, posts.length])
 
-  // Καθαρό κλείσιμο όταν ο χρήστης πατάει Έξοδος
   const handleManualClose = () => {
-    startTimeRef.current = null // Καθαρισμός του timer
+    startTimeRef.current = null
     onClose()
   }
 
@@ -134,6 +148,10 @@ export default function SlotDrawModal({
     ? String(activePost.id).substring(0, 8).toUpperCase()
     : 'TKT-' + Math.floor(1000 + Math.random() * 9000)
 
+  const activePostTickets = activePost?.votes
+    ? activePost.votes.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0)
+    : 1
+
   const getDisplaySeconds = () => {
     if (phase === 'warmup') return Math.max(1, secondsLeft - 60)
     if (phase === 'spinning') return Math.max(1, secondsLeft - 20)
@@ -144,20 +162,20 @@ export default function SlotDrawModal({
     <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex items-center justify-center p-4">
       <div className="bg-gradient-to-b from-slate-900 via-slate-950 to-black border-2 border-amber-500 rounded-3xl p-6 max-w-lg w-full text-center shadow-[0_0_70px_rgba(245,158,11,0.5)] relative overflow-hidden">
         
-        {/* ΚΟΥΜΠΙ ΕΞΟΔΟΥ (CLOSE BUTTON) */}
+        {/* ΚΟΥΜΠΙ ΕΞΟΔΟΥ */}
         <button
           onClick={handleManualClose}
-          className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 hover:text-white hover:bg-red-500/20 hover:border-red-500 transition-all flex items-center justify-center font-bold text-sm"
+          className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-slate-800/80 border border-slate-700 text-slate-300 hover:text-white hover:bg-red-500/20 hover:border-red-500 transition-all flex items-center justify-center font-bold text-sm cursor-pointer"
           title={isEn ? 'Close' : 'Έξοδος'}
         >
           ✕
         </button>
 
-        {/* Glow Backgrounds */}
+        {/* Glow Effects */}
         <div className="absolute -top-20 -left-20 w-44 h-44 bg-amber-500/20 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute -bottom-20 -right-20 w-44 h-44 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none"></div>
 
-        {/* 1. ΣΤΑΘΕΡΑ ΣΤΑΤΙΣΤΙΚΑ ΣΤΟΙΧΕΙΑ (HEADER) */}
+        {/* 1. HEADER - ΣΤΑΤΙΣΤΙΚΑ */}
         <div className="grid grid-cols-3 gap-2 mb-4 bg-slate-950/80 border border-slate-800 p-3 rounded-2xl pr-8">
           <div className="text-center">
             <span className="text-[10px] text-slate-400 font-bold uppercase block">
@@ -187,16 +205,16 @@ export default function SlotDrawModal({
           </div>
         </div>
 
-        {/* 2. SLOTS CYLINDER (ΚΥΛΙΝΔΡΟΣ ΚΛΗΡΩΤΙΔΑΣ) */}
-        <div className="relative bg-slate-950 border-4 border-amber-500/70 rounded-2xl p-5 my-3 shadow-2xl overflow-hidden min-h-[250px] flex flex-col justify-center items-center">
+        {/* 2. ΚΥΛΙΝΔΡΟΣ ΚΛΗΡΩΤΙΔΑΣ (SLOTS REEL) */}
+        <div className="relative bg-slate-950 border-4 border-amber-500/70 rounded-2xl p-5 my-3 shadow-2xl overflow-hidden min-h-[260px] flex flex-col justify-center items-center">
           
-          {/* Neon Indicators */}
+          {/* Indicators */}
           <div className="absolute top-2 left-3 right-3 flex justify-between text-[10px] font-mono text-amber-500/60 font-bold">
             <span>[ REEL ACTIVE ]</span>
-            <span>[ 70s CYCLER ]</span>
+            <span>[ TICKET WEIGHTED ]</span>
           </div>
 
-          {/* ΣΤΑΔΙΟ 1: ΠΡΟΕΤΟΙΜΑΣΙΑ (10s) */}
+          {/* ΦΑΣΗ 1: ΠΡΟΕΤΟΙΜΑΣΙΑ */}
           {phase === 'warmup' && (
             <div className="flex flex-col items-center justify-center animate-fade-in">
               <span className="text-5xl block mb-2 animate-bounce">📢</span>
@@ -212,22 +230,31 @@ export default function SlotDrawModal({
             </div>
           )}
 
-          {/* ΣΤΑΔΙΟ 2: ΠΕΡΙΣΤΡΟΦΗ ΚΥΛΙΝΔΡΟΥ (40s) */}
+          {/* ΦΑΣΗ 2: ΠΕΡΙΣΤΡΟΦΗ ΚΥΛΙΝΔΡΟΥ (ONOMA - ΚΩΔΙΚΟΣ - ΤΙΤΛΟΣ) */}
           {phase === 'spinning' && (
             <div className="w-full flex flex-col items-center justify-center space-y-2">
-              <div className="w-full bg-gradient-to-r from-amber-950/40 via-slate-900 to-amber-950/40 border-y-2 border-amber-500/50 py-3 px-2 rounded-xl shadow-inner relative animate-pulse">
+              <div className="w-full bg-gradient-to-r from-amber-950/40 via-slate-900 to-amber-950/40 border-y-2 border-amber-500/50 py-4 px-3 rounded-xl shadow-inner relative animate-pulse">
                 
-                <span className="text-[11px] font-mono font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full inline-block mb-1">
-                  ID: #{postIdDisplay}
-                </span>
-
-                <h2 className="text-xl font-black text-white tracking-wide">
+                {/* 👤 ΟΝΟΜΑ ΔΗΜΙΟΥΡΓΟΥ */}
+                <h2 className="text-2xl font-black text-amber-400 tracking-wide mb-1">
                   👤 {authorName}
                 </h2>
 
-                <p className="text-xs font-bold text-slate-300 truncate max-w-xs mx-auto mt-0.5">
+                {/* 📝 ΤΙΤΛΟΣ POST */}
+                <p className="text-sm font-extrabold text-white truncate max-w-xs mx-auto my-1">
                   "{activePost?.title || activePost?.text_content || 'Untitled Post'}"
                 </p>
+
+                {/* 🆔 ΚΩΔΙΚΟΣ & 🎟️ ΛΑΧΝΟΙ */}
+                <div className="flex justify-center items-center gap-2 mt-2">
+                  <span className="text-[11px] font-mono font-bold text-slate-400 bg-slate-950 border border-slate-800 px-2.5 py-1 rounded-md">
+                    #{postIdDisplay}
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-md">
+                    🎟️ {activePostTickets} {isEn ? 'Tickets' : 'Λαχνοί'}
+                  </span>
+                </div>
+
               </div>
 
               <div className="mt-2 flex items-center gap-2 bg-amber-500/20 border border-amber-500/40 px-4 py-1.5 rounded-full text-amber-300 text-xs font-bold font-mono">
@@ -237,7 +264,7 @@ export default function SlotDrawModal({
             </div>
           )}
 
-          {/* ΣΤΑΔΙΟ 3: ΟΘΟΝΗ ΝΙΚΗΤΗ (20s - ΣΤΑΘΕΡΟ ΟΝΟΜΑ) */}
+          {/* ΦΑΣΗ 3: ΟΘΟΝΗ ΝΙΚΗΤΗ */}
           {phase === 'winner' && (
             <div className="flex flex-col items-center justify-center animate-fade-in w-full">
               <span className="text-4xl block mb-1 animate-bounce">👑</span>
@@ -245,16 +272,23 @@ export default function SlotDrawModal({
                 {isEn ? 'WINNING TICKET DRAWN' : 'Ο ΝΙΚΗΤΗΡΙΟΣ ΛΑΧΝΟΣ ΚΛΗΡΩΘΗΚΕ'}
               </span>
 
-              <div className="bg-emerald-950/60 border border-emerald-500/50 p-3 rounded-2xl w-full my-1">
-                <span className="text-[10px] font-mono font-bold text-emerald-400 block mb-0.5">
-                  TICKET ID: #{postIdDisplay}
-                </span>
-                <h2 className="text-2xl font-black text-white">
+              <div className="bg-emerald-950/60 border border-emerald-500/50 p-4 rounded-2xl w-full my-1 text-center">
+                <h2 className="text-2xl font-black text-emerald-300">
                   👤 {authorName}
                 </h2>
-                <p className="text-xs font-bold text-amber-300 truncate mt-1">
+
+                <p className="text-xs font-bold text-white truncate my-1">
                   "{activePost?.title || activePost?.text_content || 'Winning Post'}"
                 </p>
+
+                <div className="flex justify-center items-center gap-2 mt-2">
+                  <span className="text-[11px] font-mono font-bold text-emerald-400 bg-slate-950 border border-emerald-500/40 px-2.5 py-0.5 rounded-md">
+                    ID: #{postIdDisplay}
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 px-2.5 py-0.5 rounded-md">
+                    🎟️ {activePostTickets} {isEn ? 'Tickets' : 'Λαχνοί'}
+                  </span>
+                </div>
               </div>
 
               <div className="mt-2 text-[11px] font-mono text-emerald-400 font-bold bg-slate-900 border border-emerald-500/30 px-3 py-1 rounded-xl">
