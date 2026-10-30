@@ -53,16 +53,16 @@ model user_files {
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model users {
   id                       String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  player_id                String?      @unique @db.VarChar(20)
-  email                    String?      @unique
-  phone_number             String?      @unique @db.VarChar(20)
+  player_id                String?      @unique @db.VarChar(50)
+  email                    String       @unique @db.VarChar(100)
+  phone_number             String?      @unique @db.VarChar(30)
   password_hash            String       @db.VarChar(255)
   full_name                String?      @db.VarChar(100)
-  username                 String       @unique
-  default_display_identity String?      @default("username") @db.VarChar(10)
-  wallet_balance           Decimal?     @default(0.00) @db.Decimal(12, 2)
-  is_verified              Boolean?     @default(false)
-  created_at               DateTime?    @default(now()) @db.Timestamptz(6)
+  username                 String       @unique @db.VarChar(50)
+  default_display_identity String?      @default("username") @db.VarChar(100)
+  wallet_balance           Decimal      @default(0.00) @db.Decimal(12, 2)
+  is_verified              Boolean      @default(false)
+  created_at               DateTime     @default(now()) @db.Timestamptz(6)
   bets                     bets[]
   posts                    posts[]
   user_files               user_files[]

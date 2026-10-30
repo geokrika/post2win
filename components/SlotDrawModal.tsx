@@ -6,7 +6,7 @@ interface SlotDrawModalProps {
   isOpen: boolean
   jackpotAmount: number
   posts: any[]
-  serverWinner?: any // 🟢 Ο πραγματικός νικητής από το Backend API
+  serverWinner?: any // 🟢 Ο νικητής από το Backend API
   onClose: () => void
   onDrawComplete: (winningPost: any, supporters: any[]) => void
   lang?: 'el' | 'en'
@@ -30,7 +30,7 @@ export default function SlotDrawModal({
   const isCompletedRef = useRef(false)
   const startTimeRef = useRef<number | null>(null)
 
-  // 🎟️ 1. Δημιουργία Weighted Pool (200 λαχνοί = 200 εγγραφές στον κύλινδρο)
+  // 🎟️ 1. Δημιουργία Weighted Ticket Pool (200 λαχνοί = 200 εγγραφές στον κύλινδρο)
   useEffect(() => {
     if (!posts || posts.length === 0) return
 
@@ -40,13 +40,11 @@ export default function SlotDrawModal({
       const postTickets = votes.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0)
       const count = postTickets > 0 ? postTickets : 1
 
-      // Προσθήκη του post στην κάλπη όσες φορές όσες και οι λαχνοί του
       for (let i = 0; i < count; i++) {
         pool.push(post)
       }
     })
 
-    // Ανακάτεμα (Shuffle) του pool για τυχαία εναλλαγή κατά την περιστροφή
     const shuffledPool = pool.sort(() => Math.random() - 0.5)
     setTicketPool(shuffledPool)
   }, [posts])
@@ -85,7 +83,7 @@ export default function SlotDrawModal({
         if (!isCompletedRef.current) {
           isCompletedRef.current = true
           const finalWinner = serverWinner || ticketPool[0]
-          onDrawComplete(finalWinner, finalWinner?.votes || [])
+          onDrawComplete(finalWinner, finalWinner?.votes || finalWinner?.supporters || [])
         }
       }
     }, 200)
@@ -116,21 +114,29 @@ export default function SlotDrawModal({
 
   if (!isOpen || !posts || posts.length === 0) return null
 
-  // 🎯 Ο νικητής στη φάση 'winner' είναι ΑΠΟΚΛΕΙΣΤΙΚΑ ο serverWinner
-  const activePost = phase === 'winner' ? (serverWinner || ticketPool[0]) : ticketPool[currentIndex]
+  // 🎯 Εξασφάλιση ότι ο νικητής αναγνωρίζεται σωστά είτε από το post obj είτε από το serverWinner obj
+  const rawPost = phase === 'winner' ? (serverWinner || ticketPool[0]) : ticketPool[currentIndex]
 
   const authorName =
-    activePost?.users?.username ||
-    activePost?.users?.full_name ||
-    (activePost?.users?.email ? activePost.users.email.split('@')[0] : 'Player')
+    rawPost?.winner_name ||
+    rawPost?.users?.username ||
+    rawPost?.users?.full_name ||
+    (rawPost?.users?.email ? rawPost.users.email.split('@')[0] : 'Player')
 
-  const postIdDisplay = activePost?.id
-    ? String(activePost.id).substring(0, 8).toUpperCase()
+  const postTitle =
+    rawPost?.post_title ||
+    rawPost?.title ||
+    rawPost?.text_content ||
+    rawPost?.post_text ||
+    'Untitled Post'
+
+  const postIdDisplay = rawPost?.id || rawPost?.post_id
+    ? String(rawPost.id || rawPost.post_id).substring(0, 8).toUpperCase()
     : 'TKT-' + Math.floor(1000 + Math.random() * 9000)
 
-  const activePostTickets = activePost?.votes
-    ? activePost.votes.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0)
-    : 1
+  const activePostTickets = rawPost?.votes
+    ? rawPost.votes.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0)
+    : (rawPost?.tickets || 1)
 
   const getDisplaySeconds = () => {
     if (phase === 'warmup') return Math.max(1, secondsLeft - 60)
@@ -211,7 +217,7 @@ export default function SlotDrawModal({
                 </h2>
 
                 <p className="text-sm font-extrabold text-white truncate max-w-xs mx-auto my-1">
-                  "{activePost?.title || activePost?.text_content || 'Untitled Post'}"
+                  "{postTitle}"
                 </p>
 
                 <div className="flex justify-center items-center gap-2 mt-2">
@@ -245,7 +251,7 @@ export default function SlotDrawModal({
                 </h2>
 
                 <p className="text-xs font-bold text-white truncate my-1">
-                  "{activePost?.title || activePost?.text_content || 'Winning Post'}"
+                  "{postTitle}"
                 </p>
 
                 <div className="flex justify-center items-center gap-2 mt-2">

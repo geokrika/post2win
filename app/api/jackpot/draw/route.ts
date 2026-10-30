@@ -26,7 +26,6 @@ async function executeDraw() {
   }
 
   // 2. Δημιουργία της "Κάλπης" Λαχνών (Ticket Weighted Pool)
-  // Κάθε entry στο ticketPool ανήκει σε ένα συγκεκριμένο post
   const ticketPool: { postId: string; post: any }[] = []
 
   activePosts.forEach((post: any) => {
@@ -34,7 +33,7 @@ async function executeDraw() {
     const totalPostTickets = postVotes.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0)
     const ticketsCount = totalPostTickets > 0 ? totalPostTickets : 1
 
-    // Προσθέτουμε το post στην κάλπη όσες φορές όσες και οι λαχνοί του!
+    // Προσθέτουμε το post στην κάλπη όσες φορές όσες και οι λαχνοί του
     for (let i = 0; i < ticketsCount; i++) {
       ticketPool.push({ postId: post.id, post })
     }
@@ -53,7 +52,7 @@ async function executeDraw() {
   const creatorPrize = Number((totalJackpot * 0.70).toFixed(2))
   const supportersPool = Number((totalJackpot * 0.30).toFixed(2))
 
-  // 3. 🎟️ ΚΛΗΡΩΣΗ ΜΕ ΛΑΧΝΟΥΣ: Επιλογή τυχαίου λαχνού από την κάλπη (Weighted Selection)
+  // 3. 🎟️ ΚΛΗΡΩΣΗ ΜΕ ΛΑΧΝΟΥΣ (Weighted Selection)
   const winningTicketIndex = Math.floor(Math.random() * ticketPool.length)
   const winningTicket = ticketPool[winningTicketIndex]
   const winningPost: any = winningTicket.post
@@ -141,7 +140,7 @@ export async function GET() {
     const result = await executeDraw()
     return NextResponse.json(result)
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    return NextResponse.json({ success: false, error: error?.message || 'Draw error' }, { status: 500 })
   }
 }
 
@@ -150,6 +149,6 @@ export async function POST() {
     const result = await executeDraw()
     return NextResponse.json(result)
   } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    return NextResponse.json({ success: false, error: error?.message || 'Draw error' }, { status: 500 })
   }
 }
