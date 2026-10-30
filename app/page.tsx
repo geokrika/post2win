@@ -23,7 +23,7 @@ export default function HomePage() {
   
   const [showMyPostsOnly, setShowMyPostsOnly] = useState(false)
   const [lastWinner, setLastWinner] = useState<any>(null)
-  const [serverWinner, setServerWinner] = useState<any>(null) // 🟢 Ο νικητής από το API
+  const [serverWinner, setServerWinner] = useState<any>(null)
   const [winnersHistory, setWinnersHistory] = useState<any[]>([])
 
   const [isAuthOpen, setIsAuthOpen] = useState(false)
@@ -146,7 +146,6 @@ export default function HomePage() {
     }
   }
 
-  // 🟢 ΕΚΤΕΛΕΣΗ ΚΛΗΡΩΣΗΣ ΣΤΟ API & ΕΝΗΜΕΡΩΣΗ STATE
   const executeJackpotDraw = async () => {
     try {
       const res = await fetch('/api/jackpot/draw', { method: 'POST' })
@@ -181,7 +180,6 @@ export default function HomePage() {
     }
   }
 
-  // 🟢 ΧΕΙΡΟΚΙΝΗΤΗ Ή ΑΥΤΟΜΑΤΗ ΕΝΑΡΞΗ ΚΛΗΡΩΣΗΣ
   const triggerDraw = async () => {
     const winnerData = await executeJackpotDraw()
     if (winnerData) {
@@ -238,7 +236,7 @@ export default function HomePage() {
 
         if (postsWithTickets.length >= 4) {
           setDrawCancelledMessage(null)
-          await triggerDraw() // 🟢 Εκτέλεση κλήρωσης και άνοιγμα του Slot Modal
+          await triggerDraw()
         } else {
           setDrawCancelledMessage(
             lang === 'en'
@@ -440,7 +438,7 @@ export default function HomePage() {
     : posts
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white pb-16" suppressHydrationWarning>
+    <main className="min-h-screen bg-slate-950 text-white pb-16">
       
       <Header
         user={user}
@@ -507,7 +505,7 @@ export default function HomePage() {
               onClick={() => setIsHistoryOpen(true)}
               className="bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold px-4 py-2 rounded-xl text-xs border border-amber-500/20 flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
             >
-              <span suppressHydrationWarning>
+              <span>
                 {isEn ? `📜 Winners History (${winnersHistory.length})` : `📜 Ιστορικό Νικητών (${winnersHistory.length})`}
               </span>
             </button>
@@ -519,27 +517,27 @@ export default function HomePage() {
             <div className="absolute top-2 right-3 text-3xl">👑</div>
             
             <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
-              <span className="text-xs text-amber-400 font-bold uppercase tracking-wider" suppressHydrationWarning>
+              <span className="text-xs text-amber-400 font-bold uppercase tracking-wider">
                 {isEn ? `🏆 Last Draw Winner (${lastWinner.date || ''})` : `🏆 Νικητής Τελευταίας Κλήρωσης (${lastWinner.date || ''})`}
               </span>
-              <span className="text-xs font-mono text-amber-300 bg-amber-500/20 border border-amber-500/40 px-3 py-1 rounded-full font-bold" suppressHydrationWarning>
+              <span className="text-xs font-mono text-amber-300 bg-amber-500/20 border border-amber-500/40 px-3 py-1 rounded-full font-bold">
                 Jackpot Pool: €{(Number(lastWinner.total_jackpot) || 50).toFixed(2)}
               </span>
             </div>
 
-            <h3 className="text-xl font-black text-white" suppressHydrationWarning>
+            <h3 className="text-xl font-black text-white">
               👤 {lastWinner.winner_name || (isEn ? 'Winner' : 'Νικητής')}
             </h3>
 
             <div className="my-3 bg-black/40 p-3 rounded-xl border border-slate-800">
               {lastWinner.post_title && (
-                <h4 className="text-sm font-extrabold text-amber-300 mb-1" suppressHydrationWarning>
+                <h4 className="text-sm font-extrabold text-amber-300 mb-1">
                   "{lastWinner.post_title}"
                 </h4>
               )}
               
               {lastWinner.post_text && (
-                <p className="text-xs text-slate-300 line-clamp-3 leading-relaxed whitespace-pre-line" suppressHydrationWarning>
+                <p className="text-xs text-slate-300 line-clamp-3 leading-relaxed whitespace-pre-line">
                   {lastWinner.post_text}
                 </p>
               )}
@@ -599,10 +597,10 @@ export default function HomePage() {
 
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h1 className="text-2xl font-black tracking-tight" suppressHydrationWarning>
+            <h1 className="text-2xl font-black tracking-tight">
               {isEn ? '🔥 Live Content Feed' : '🔥 Ζωντανή Ροή Περιεχομένου'}
             </h1>
-            <p className="text-xs text-slate-400 font-medium" suppressHydrationWarning>
+            <p className="text-xs text-slate-400 font-medium">
               {isEn ? `Active Posts with Tickets in Pool: ${activePostsCount}/4 min` : `Ενεργά δημοσιεύματα με λαχνούς στην κλήρωση: ${activePostsCount}/4 ελάχιστο`}
             </p>
           </div>
@@ -612,14 +610,14 @@ export default function HomePage() {
             className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-black px-4 py-2.5 rounded-xl text-xs transition shadow-lg shadow-amber-500/20 active:scale-95 flex items-center gap-1.5 cursor-pointer"
           >
             <span>✨</span>
-            <span suppressHydrationWarning>{isEn ? 'New Post' : 'Νέο Δημοσίευμα'}</span>
+            <span>{isEn ? 'New Post' : 'Νέο Δημοσίευμα'}</span>
           </button>
         </div>
 
         {displayedPosts.length === 0 ? (
           <div className="text-center py-16 bg-slate-900/50 border border-slate-800 rounded-2xl">
             <span className="text-4xl block mb-3">📭</span>
-            <p className="text-slate-400 text-sm font-semibold" suppressHydrationWarning>
+            <p className="text-slate-400 text-sm font-semibold">
               {showMyPostsOnly
                 ? (isEn ? 'You have no posts in this draw cycle.' : 'Δεν έχετε δημοσιεύσεις σε αυτόν τον κύκλο.')
                 : (isEn ? 'No posts found in this draw cycle yet.' : 'Δεν υπάρχουν ακόμα δημοσιεύματα σε αυτόν τον κύκλο.')}
@@ -627,8 +625,154 @@ export default function HomePage() {
             <button
               onClick={handleOpenCreatePost}
               className="mt-4 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold px-4 py-2 rounded-xl text-xs border border-amber-500/20 cursor-pointer"
-              suppressHydrationWarning
             >
               {isEn ? 'Be the first to post!' : 'Γίνε ο πρώτος που θα δημοσιεύσει!'}
             </button>
           </div>
+        ) : (
+          <div className="space-y-6">
+            {displayedPosts.map((post) => {
+              const { title, body } = extractTitleAndBody(post)
+              const authorName = getCleanUsername(post.users) || 'User'
+
+              const postVotes = post.votes || []
+              const totalTickets = postVotes.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 0), 0)
+
+              return (
+                <div
+                  key={`post-${post.id || post.hash_id}`}
+                  className="bg-slate-900/80 border border-slate-800 hover:border-slate-700 rounded-2xl p-5 transition-all shadow-xl flex flex-col justify-between gap-4"
+                >
+                  <div>
+                    <div className="flex justify-between items-start gap-3 mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 to-indigo-600 flex items-center justify-center font-black text-xs text-slate-950 shadow-md">
+                          {authorName.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <span className="text-sm font-bold text-slate-200 block leading-tight">
+                            {authorName}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {post.created_at ? new Date(post.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Live'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800">
+                        <span className="text-xs font-black text-amber-400 font-mono">
+                          🎟️ {totalTickets}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-semibold">
+                          {isEn ? 'Tickets' : 'Λαχνοί'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {title && (
+                      <h2 className="text-lg font-extrabold text-amber-300 mt-2 mb-1">
+                        {title}
+                      </h2>
+                    )}
+
+                    {body && (
+                      <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+                        {body}
+                      </p>
+                    )}
+
+                    {post.file_url && (
+                      <div className="mt-3 rounded-xl overflow-hidden border border-slate-800 bg-black/50 max-h-96 flex items-center justify-center">
+                        {post.file_type?.startsWith('video') ? (
+                          <video src={post.file_url} controls className="max-h-96 w-full object-contain" />
+                        ) : (
+                          <img src={post.file_url} alt="Post asset" className="max-h-96 w-full object-contain" />
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-800/80 flex flex-col gap-3">
+                    <div className="flex justify-between items-center gap-3">
+                      <span className="text-xs font-bold text-amber-400">
+                        {isEn ? '👥 Supporters & Bets' : '👥 Υποστηρικτές & Πονταρίσματα'}
+                      </span>
+
+                      <BetButton
+                        fileId={post.id || post.hash_id}
+                        userId={user?.id}
+                        userBalance={user?.wallet_balance ?? 100}
+                        onRequireLogin={handleOpenLogin}
+                        onBetSuccess={(newBal, newJackpot, newVote) => {
+                          handleBetSuccess(post.id || post.hash_id, newBal, newJackpot, newVote)
+                        }}
+                      />
+                    </div>
+
+                    {renderSupportersList(post.votes || [])}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      <AuthModal 
+        isOpen={isAuthOpen} 
+        lang={lang} 
+        mode={authMode} 
+        onClose={() => setIsAuthOpen(false)}
+        onSwitchMode={(mode) => setAuthMode(mode)}
+        onSuccess={(loggedUser) => {
+          setUser(loggedUser)
+          localStorage.setItem('ugc_user', JSON.stringify(loggedUser))
+          setIsAuthOpen(false)
+        }}
+      />
+
+      <CreatePostModal 
+        isOpen={isCreatePostOpen} 
+        lang={lang} 
+        userId={user?.id || user?.player_id}
+        onClose={() => setIsCreatePostOpen(false)}
+        onSuccess={(newPost) => {
+          setIsCreatePostOpen(false)
+          if (newPost) {
+            setPosts((prevPosts) => {
+              const updated = [newPost, ...prevPosts]
+              localStorage.setItem('ugc_posts', JSON.stringify(updated))
+              return updated
+            })
+          }
+          fetchFeedData()
+        }}
+      />
+
+      <WinnersHistoryModal 
+        history={winnersHistory} 
+        isOpen={isHistoryOpen} 
+        onClose={() => setIsHistoryOpen(false)}
+        lang={lang}
+      />
+
+      <SlotDrawModal 
+        isOpen={isSlotDrawOpen} 
+        jackpotAmount={jackpotAmount} 
+        posts={posts}
+        serverWinner={serverWinner}
+        onClose={() => setIsSlotDrawOpen(false)}
+        onDrawComplete={handleDrawComplete}
+        lang={lang}
+      />
+
+      <MyPostsModal 
+        isOpen={isMyPostsOpen} 
+        userId={user?.id}
+        onClose={() => setIsMyPostsOpen(false)}
+        onPostDeleted={() => fetchFeedData()}
+        lang={lang}
+      />
+    </main>
+  )
+}
