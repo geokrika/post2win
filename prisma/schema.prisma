@@ -56,7 +56,7 @@ model users {
   player_id                String?      @unique @db.VarChar(20)
   email                    String?      @unique
   phone_number             String?      @unique @db.VarChar(20)
-  password_hash            String?      @db.VarChar(255)
+  password_hash            String       @db.VarChar(255)
   full_name                String?      @db.VarChar(100)
   username                 String       @unique
   default_display_identity String?      @default("username") @db.VarChar(10)
