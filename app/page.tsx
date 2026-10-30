@@ -145,7 +145,7 @@ export default function HomePage() {
       console.error('Error in fetchFeedData:', err)
     }
   }
-
+// 🟢 ΕΚΤΕΛΕΣΗ ΚΛΗΡΩΣΗΣ & ΠΛΗΡΕΣ ΜΗΔΕΝΙΣΜΟΣ FEED/STORAGE
   const executeJackpotDraw = async () => {
     try {
       const res = await fetch('/api/jackpot/draw', { method: 'POST' })
@@ -154,6 +154,7 @@ export default function HomePage() {
       if (data && data.success && data.executed && data.winner) {
         const winnerData = data.winner
 
+        // 1. Αποθήκευση Νικητή & Ενημέρωση Ιστορικού
         setLastWinner(winnerData)
         localStorage.setItem('ugc_last_winner', JSON.stringify(winnerData))
 
@@ -163,12 +164,14 @@ export default function HomePage() {
           return updated
         })
 
+        // 🧹 2. ΟΡΙΣΤΙΚΟΣ ΜΗΔΕΝΙΣΜΟΣ: Καθαρισμός Posts & Λαχνών
         setPosts([])
         setJackpotAmount(50.00)
-        localStorage.removeItem('ugc_posts')
+        localStorage.removeItem('ugc_posts') // Καθαρισμός τοπικής μνήμης
 
+        // 3. Ανανέωση στοιχείων χρήστη & φρεσκάρισμα από τη βάση
         if (user?.id) refreshUserData(user.id)
-        await fetchFeedData()
+        
         return winnerData
       } else if (data && !data.executed) {
         setDrawCancelledMessage(`⚠️ ${data.message}`)
@@ -419,9 +422,17 @@ export default function HomePage() {
     fetchWinnersHistory()
   }, [])
 
+  // 🟢 ΟΛΟΚΛΗΡΩΣΗ ANIMATION ΚΛΗΡΩΣΗΣ
   const handleDrawComplete = async (winningPost: any, fallbackSupportersList: any[]) => {
     setIsSlotDrawOpen(false)
     setServerWinner(null)
+
+    // 🧹 Επιβεβαίωση μηδενισμού posts και καθαρισμός storage μετά το κλείσιμο του modal
+    setPosts([])
+    localStorage.removeItem('ugc_posts')
+
+    // Φέρνουμε το νέο άδειο feed από το Backend
+    await fetchFeedData()
   }
 
   if (!isMounted) return null
