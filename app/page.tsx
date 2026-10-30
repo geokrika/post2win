@@ -23,6 +23,7 @@ export default function HomePage() {
   
   const [showMyPostsOnly, setShowMyPostsOnly] = useState(false)
   const [lastWinner, setLastWinner] = useState<any>(null)
+  const [serverWinner, setServerWinner] = useState<any>(null) // 🟢 Ο νικητής από το API
   const [winnersHistory, setWinnersHistory] = useState<any[]>([])
 
   const [isAuthOpen, setIsAuthOpen] = useState(false)
@@ -145,13 +146,14 @@ export default function HomePage() {
     }
   }
 
+  // 🟢 ΕΚΤΕΛΕΣΗ ΚΛΗΡΩΣΗΣ ΣΤΟ API & ΕΝΗΜΕΡΩΣΗ STATE
   const executeJackpotDraw = async () => {
     try {
-      const res = await fetch('/api/draw', { method: 'POST' })
+      const res = await fetch('/api/jackpot/draw', { method: 'POST' })
       const data = await res.json().catch(() => null)
 
       if (data && data.success && data.executed && data.winner) {
-        const winnerData = data.winner // 🟢 Παίρνουμε τον ΠΡΑΓΜΑΤΙΚΟ νικητή και τα ΠΟΣΑ από το API
+        const winnerData = data.winner
 
         setLastWinner(winnerData)
         localStorage.setItem('ugc_last_winner', JSON.stringify(winnerData))
@@ -168,11 +170,23 @@ export default function HomePage() {
 
         if (user?.id) refreshUserData(user.id)
         await fetchFeedData()
+        return winnerData
       } else if (data && !data.executed) {
         setDrawCancelledMessage(`⚠️ ${data.message}`)
+        return null
       }
     } catch (err) {
       console.error('Error executing draw:', err)
+      return null
+    }
+  }
+
+  // 🟢 ΧΕΙΡΟΚΙΝΗΤΗ Ή ΑΥΤΟΜΑΤΗ ΕΝΑΡΞΗ ΚΛΗΡΩΣΗΣ
+  const triggerDraw = async () => {
+    const winnerData = await executeJackpotDraw()
+    if (winnerData) {
+      setServerWinner(winnerData)
+      setIsSlotDrawOpen(true)
     }
   }
 
@@ -224,7 +238,7 @@ export default function HomePage() {
 
         if (postsWithTickets.length >= 4) {
           setDrawCancelledMessage(null)
-          setIsSlotDrawOpen(true)
+          await triggerDraw() // 🟢 Εκτέλεση κλήρωσης και άνοιγμα του Slot Modal
         } else {
           setDrawCancelledMessage(
             lang === 'en'
@@ -390,6 +404,7 @@ export default function HomePage() {
       </div>
     )
   }
+
   const fetchWinnersHistory = async () => {
     try {
       const res = await fetch('/api/winners', { cache: 'no-store' })
@@ -400,16 +415,15 @@ export default function HomePage() {
     } catch (err) {
       console.error('Error fetching winners history:', err)
     }
-   }
+  }
 
   useEffect(() => {
-    // ... τα υπόλοιπα useEffect
     fetchWinnersHistory()
   }, [])
 
   const handleDrawComplete = async (winningPost: any, fallbackSupportersList: any[]) => {
     setIsSlotDrawOpen(false)
-    await executeJackpotDraw()
+    setServerWinner(null)
   }
 
   if (!isMounted) return null
@@ -618,149 +632,3 @@ export default function HomePage() {
               {isEn ? 'Be the first to post!' : 'Γίνε ο πρώτος που θα δημοσιεύσει!'}
             </button>
           </div>
-        ) : (
-          <div className="space-y-6">
-            {displayedPosts.map((post) => {
-              const { title, body } = extractTitleAndBody(post)
-              const authorName = getCleanUsername(post.users) || 'User'
-
-              const postVotes = post.votes || []
-              const totalTickets = postVotes.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 0), 0)
-
-              return (
-                <div
-                  key={`post-${post.id || post.hash_id}`}
-                  className="bg-slate-900/80 border border-slate-800 hover:border-slate-700 rounded-2xl p-5 transition-all shadow-xl flex flex-col justify-between gap-4"
-                >
-                  <div>
-                    <div className="flex justify-between items-start gap-3 mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-500 to-indigo-600 flex items-center justify-center font-black text-xs text-slate-950 shadow-md">
-                          {authorName.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <span className="text-sm font-bold text-slate-200 block leading-tight">
-                            {authorName}
-                          </span>
-                          <span className="text-[10px] text-slate-500 font-mono">
-                            {post.created_at ? new Date(post.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Live'}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 bg-slate-950/80 px-3 py-1.5 rounded-xl border border-slate-800">
-                        <span className="text-xs font-black text-amber-400 font-mono">
-                          🎟️ {totalTickets}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-semibold" suppressHydrationWarning>
-                          {isEn ? 'Tickets' : 'Λαχνοί'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {title && (
-                      <h2 className="text-lg font-extrabold text-amber-300 mt-2 mb-1">
-                        {title}
-                      </h2>
-                    )}
-
-                    {body && (
-                      <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
-                        {body}
-                      </p>
-                    )}
-
-                    {post.file_url && (
-                      <div className="mt-3 rounded-xl overflow-hidden border border-slate-800 bg-black/50 max-h-96 flex items-center justify-center">
-                        {post.file_type?.startsWith('video') ? (
-                          <video src={post.file_url} controls className="max-h-96 w-full object-contain" />
-                        ) : (
-                          <img src={post.file_url} alt="Post asset" className="max-h-96 w-full object-contain" />
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-800/80 flex flex-col gap-3">
-                    <div className="flex justify-between items-center gap-3">
-                      <span className="text-xs font-bold text-amber-400" suppressHydrationWarning>
-                        {isEn ? '👥 Supporters & Bets' : '👥 Υποστηρικτές & Πονταρίσματα'}
-                      </span>
-
-                      <BetButton
-                        fileId={post.id || post.hash_id}
-                        userId={user?.id}
-                        userBalance={user?.wallet_balance ?? 100}
-                        onRequireLogin={handleOpenLogin}
-                        onBetSuccess={(newBal, newJackpot, newVote) => {
-                          handleBetSuccess(post.id || post.hash_id, newBal, newJackpot, newVote)
-                        }}
-                      />
-                    </div>
-
-                    {renderSupportersList(post.votes || [])}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
-      <AuthModal 
-        isOpen={isAuthOpen} 
-        lang={lang} 
-        mode={authMode} 
-        onClose={() => setIsAuthOpen(false)}
-        onSwitchMode={(mode) => setAuthMode(mode)}
-        onSuccess={(loggedUser) => {
-          setUser(loggedUser)
-          localStorage.setItem('ugc_user', JSON.stringify(loggedUser))
-          setIsAuthOpen(false)
-        }}
-      />
-
-      <CreatePostModal 
-        isOpen={isCreatePostOpen} 
-        lang={lang} 
-        userId={user?.id || user?.player_id}
-        onClose={() => setIsCreatePostOpen(false)}
-        onSuccess={(newPost) => {
-          setIsCreatePostOpen(false)
-          if (newPost) {
-            setPosts((prevPosts) => {
-              const updated = [newPost, ...prevPosts]
-              localStorage.setItem('ugc_posts', JSON.stringify(updated))
-              return updated
-            })
-          }
-          fetchFeedData()
-        }}
-      />
-
-      <WinnersHistoryModal 
-        history={winnersHistory} 
-        isOpen={isHistoryOpen} 
-        onClose={() => setIsHistoryOpen(false)}
-        lang={lang}
-      />
-
-      <SlotDrawModal 
-        isOpen={isSlotDrawOpen} 
-        jackpotAmount={jackpotAmount} 
-        posts={posts}
-        onClose={() => setIsSlotDrawOpen(false)}
-        onDrawComplete={handleDrawComplete}
-        lang={lang}
-      />
-
-      <MyPostsModal 
-        isOpen={isMyPostsOpen} 
-        userId={user?.id}
-        onClose={() => setIsMyPostsOpen(false)}
-        onPostDeleted={() => fetchFeedData()}
-        lang={lang}
-      />
-    </main>
-  )
-}

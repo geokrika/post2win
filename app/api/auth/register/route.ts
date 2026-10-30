@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
+import bcrypt from 'bcryptjs'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,11 +47,14 @@ export async function POST(req: Request) {
       )
     }
 
-    // 2. Παραγωγή UUID
+    // 🔒 2. Hashing του κωδικού πρόσβασης (Bcrypt με 10 rounds)
+    const hashedPassword = password ? await bcrypt.hash(password, 10) : ''
+
+    // 3. Παραγωγή UUID & Player ID
     let authUserId: string = crypto.randomUUID()
     const generatedPlayerId = 'PL' + Math.floor(100000 + Math.random() * 900000)
 
-    // 3. Εγγραφή στο Supabase Auth
+    // 4. Εγγραφή στο Supabase Auth
     try {
       console.log('🔄 Creating user in Supabase Auth...')
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -70,7 +74,7 @@ export async function POST(req: Request) {
       console.warn('⚠️ Supabase Auth Exception:', sbErr)
     }
 
-    // 4. Εγγραφή στη Βάση Δεδομένων μέσω Prisma
+    // 5. Εγγραφή στη Βάση Δεδομένων μέσω Prisma (με το hashedPassword)
     console.log('🔄 Creating user in PostgreSQL via Prisma...')
     const newUser = await prisma.users.create({
       data: {
@@ -79,7 +83,7 @@ export async function POST(req: Request) {
         username: username,
         email: email,
         phone_number: phone,
-        password_hash: password,
+        password_hash: hashedPassword, // 🟢 Αποθήκευση του Hashed password
         full_name: fullName,
         default_display_identity: username || fullName,
         wallet_balance: 100.00,
@@ -87,9 +91,12 @@ export async function POST(req: Request) {
       },
     })
 
-    console.log('✅ USER SUCCESSFULLY CREATED IN DB:', newUser.id)
+    console.log('✅ USER SUCCESSFULLY CREATED IN DB WITH HASHED PASSWORD:', newUser.id)
 
-    return NextResponse.json({ success: true, user: newUser }, { status: 200 })
+    // Μην επιστρέφεις το password_hash στο frontend response για λόγους ασφαλείας
+    const { password_hash, ...userWithoutPassword } = newUser as any
+
+    return NextResponse.json({ success: true, user: userWithoutPassword }, { status: 200 })
 
   } catch (error: any) {
     console.error('❌ REGISTER API PRISMA ERROR:', error)
