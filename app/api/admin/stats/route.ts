@@ -19,7 +19,7 @@ export async function GET() {
       console.log('Admin Auth List error, fallback to table query')
     }
 
-    // 2. Φόρτωση χρηστών από πίνακες users / profiles (αν υπάρχουν)
+    // 2. Φόρτωση χρηστών από πίνακες users / profiles με όλα τα πιθανά πεδία υπολοίπου
     const { data: usersData } = await supabase.from('users').select('*')
     const { data: profilesData } = await supabase.from('profiles').select('*')
 
@@ -33,12 +33,20 @@ export async function GET() {
 
     const userMap = new Map<string, any>()
 
+    // Βοηθητική συνάρτηση ακριβούς εξαγωγής υπολοίπου
+    const extractBalance = (obj: any): number => {
+      if (!obj) return 0
+      const val = obj.wallet_balance ?? obj.balance ?? obj.credits ?? obj.tokens ?? obj.wallet ?? 0
+      return Number(val) || 0
+    }
+
     // Α) Προσθήκη από το Auth της Supabase (Όλοι οι εγγεγραμμένοι)
     authUsers.forEach((u: any) => {
+      const bal = extractBalance(u.user_metadata) || extractBalance(u)
       userMap.set(String(u.id), {
         id: u.id,
         username: u.user_metadata?.username || u.user_metadata?.full_name || u.email || `Χρήστης #${String(u.id).substring(0, 6)}`,
-        balance: Number(u.user_metadata?.balance || 0),
+        balance: bal,
         created_at: u.created_at,
       })
     })
@@ -47,10 +55,12 @@ export async function GET() {
     tableUsers.forEach((u: any) => {
       const uid = String(u.id)
       const existing = userMap.get(uid) || {}
+      const dbBal = extractBalance(u)
+
       userMap.set(uid, {
         id: uid,
         username: u.username || u.name || u.email || existing.username || `Χρήστης #${uid.substring(0, 6)}`,
-        balance: Number(u.balance ?? u.credits ?? existing.balance ?? 0),
+        balance: dbBal > 0 ? dbBal : (existing.balance || 0),
         created_at: u.created_at || existing.created_at,
       })
     })
@@ -78,10 +88,14 @@ export async function GET() {
         (p: any) => p.is_active === true || p.is_active === 1
       )
 
+      // 💰 Ακριβής υπολογισμός συγκεντρωμένων ποσών στα ενεργά posts
       const activePostIds = new Set(userActivePosts.map((p: any) => String(p.id)))
       const totalAmountOnUserPosts = votesList
         .filter((v: any) => activePostIds.has(String(v.post_id)))
-        .reduce((sum: number, v: any) => sum + (Number(v.amount || v.tickets_earned || v.votes) || 1), 0)
+        .reduce((sum: number, v: any) => {
+          const voteVal = v.amount ?? v.tickets_earned ?? v.votes ?? v.price ?? 0
+          return sum + (Number(voteVal) || 0)
+        }, 0)
 
       return {
         id: u.id,
@@ -100,12 +114,15 @@ export async function GET() {
 
     const currentPoolRevenue = votesList
       .filter((v: any) => activePostIds.has(String(v.post_id)))
-      .reduce((sum: number, v: any) => sum + (Number(v.amount || v.tickets_earned || v.votes) || 1), 0)
+      .reduce((sum: number, v: any) => {
+        const voteVal = v.amount ?? v.tickets_earned ?? v.votes ?? v.price ?? 0
+        return sum + (Number(voteVal) || 0)
+      }, 0)
 
-    const totalAllTimeRevenue = votesList.reduce(
-      (sum: number, v: any) => sum + (Number(v.amount || v.tickets_earned || v.votes) || 1),
-      0
-    )
+    const totalAllTimeRevenue = votesList.reduce((sum: number, v: any) => {
+      const voteVal = v.amount ?? v.tickets_earned ?? v.votes ?? v.price ?? 0
+      return sum + (Number(voteVal) || 0)
+    }, 0)
 
     const BASE_JACKPOT = 50.0
     const currentJackpot = BASE_JACKPOT + currentPoolRevenue * 0.90
