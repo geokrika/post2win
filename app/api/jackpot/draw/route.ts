@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 
 async function executeDraw() {
   // 1. Φέρνουμε τα ενεργά posts μαζί με τον δημιουργό (users) & τους λαχνούς/υποστηρικτές (votes)
-  const activePosts = await prisma.posts.findMany({
+  const rawActivePosts = await prisma.posts.findMany({
     where: { is_active: true },
     include: {
       users: true,
@@ -14,6 +14,14 @@ async function executeDraw() {
       },
     },
   })
+
+  // Μετράμε μόνο λαχνούς που έγιναν ΜΕΤΑ τη δημιουργία του post (ίδια λογική με το /api/feed)
+  const activePosts = rawActivePosts.map((p: any) => ({
+    ...p,
+    votes: (p.votes || []).filter(
+      (v: any) => !v.created_at || !p.created_at || new Date(v.created_at) >= new Date(p.created_at)
+    ),
+  }))
 
   // 🛑 Κανόνας: Απαιτούνται τουλάχιστον 4 ενεργά posts
   if (activePosts.length < 4) {
@@ -79,36 +87,46 @@ async function executeDraw() {
   // 5. Database Transaction: Ενημέρωση Υπολοίπων & Κλείσιμο Κύκλου (is_active = false)
   const activePostIds = activePosts.map((p: any) => p.id)
 
-  const transactionQueries: any[] = [
-    prisma.posts.updateMany({
-      where: { id: { in: activePostIds } },
-      data: { is_active: false },
-    }),
-  ]
-
-  // Πίστωση Δημιουργού (70%)
-  if (winnerUser?.id) {
-    transactionQueries.push(
-      prisma.users.update({
-        where: { id: winnerUser.id },
-        data: { wallet_balance: { increment: creatorPrize } },
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Κλείνουμε τα posts ΜΟΝΟ αν είναι ακόμα ενεργά. Αν άλλο αίτημα πρόλαβε, count != length → ακύρωση.
+      const closed = await tx.posts.updateMany({
+        where: { id: { in: activePostIds }, is_active: true },
+        data: { is_active: false },
       })
-    )
-  }
+      if (closed.count !== activePostIds.length) {
+        throw new Error('DRAW_ALREADY_EXECUTED')
+      }
 
-  // Πίστωση Υποστηρικτών (30% αναλογικά)
-  supportersList.forEach((sup: any) => {
-    if (sup.userId && sup.prizeWon > 0) {
-      transactionQueries.push(
-        prisma.users.update({
-          where: { id: sup.userId },
-          data: { wallet_balance: { increment: sup.prizeWon } },
+      // Πίστωση Δημιουργού (70%)
+      if (winnerUser?.id) {
+        await tx.users.update({
+          where: { id: winnerUser.id },
+          data: { wallet_balance: { increment: creatorPrize } },
         })
-      )
-    }
-  })
+      }
 
-  await prisma.$transaction(transactionQueries)
+      // Πίστωση Υποστηρικτών (30% αναλογικά)
+      for (const sup of supportersList) {
+        if (sup.userId && sup.prizeWon > 0) {
+          await tx.users.update({
+            where: { id: sup.userId },
+            data: { wallet_balance: { increment: sup.prizeWon } },
+          })
+        }
+      }
+    })
+  } catch (e: any) {
+    if (e?.message === 'DRAW_ALREADY_EXECUTED') {
+      return {
+        success: false,
+        executed: false,
+        alreadyExecuted: true,
+        message: 'Η κλήρωση έχει ήδη εκτελεστεί.',
+      }
+    }
+    throw e
+  }
 
   const winnerName = winnerUser?.username || winnerUser?.full_name || (winnerUser?.email ? winnerUser.email.split('@')[0] : 'Winner')
 
@@ -132,6 +150,15 @@ async function executeDraw() {
     },
     totalPostsCount: activePosts.length,
     totalTicketsCount: ticketPool.length,
+    drawPosts: activePosts.map((p: any) => ({
+      id: p.id,
+      title: p.title,
+      text_content: p.text_content,
+      users: {
+        username: p.users?.username || p.users?.full_name || (p.users?.email ? p.users.email.split('@')[0] : 'Player'),
+      },
+      votes: (p.votes || []).map((v: any) => ({ tickets_earned: Number(v.tickets_earned) || 1 })),
+    })),
   }
 }
 

@@ -17,6 +17,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'Post not found' }, { status: 404 })
     }
 
+    if (originalPost.user_id !== userId) {
+      return NextResponse.json({ success: false, error: 'Not allowed' }, { status: 403 })
+    }
+
+    if (originalPost.is_active) {
+      return NextResponse.json({ success: false, error: 'Το post είναι ήδη ενεργό' }, { status: 409 })
+    }
+
     // 🟢 Δημιουργία ΝΕΟΥ post με 0 λαχνούς (is_active: true)
     const newPost = await prisma.posts.create({
       data: {

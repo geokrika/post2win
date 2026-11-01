@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { prisma } from '@/lib/prisma'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY! || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+export const dynamic = 'force-dynamic'
 
+// Η "επαναφορά" ΔΕΝ ξανανοίγει το παλιό post (θα κρατούσε τους παλιούς λαχνούς).
+// Δημιουργεί ΝΕΟ post με το ίδιο περιεχόμενο και 0 λαχνούς. Το παλιό μένει στο ιστορικό.
 export async function POST(request: Request) {
   try {
     const { postId, userId } = await request.json()
@@ -12,20 +13,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Missing postId or userId' }, { status: 400 })
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey)
+    const original = await prisma.posts.findUnique({ where: { id: postId } })
 
-    // Ενημέρωση του post σε ενεργό στον τρέχοντα κύκλο
-    const { error } = await supabase
-      .from('posts')
-      .update({ is_active: true })
-      .eq('id', postId)
-      .eq('user_id', userId)
-
-    if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+    if (!original || original.user_id !== userId) {
+      return NextResponse.json({ success: false, error: 'Post not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ success: true, message: 'Post reactivated successfully' })
+    if (original.is_active) {
+      return NextResponse.json({ success: false, error: 'Το post είναι ήδη ενεργό' }, { status: 409 })
+    }
+
+    const newPost = await prisma.posts.create({
+      data: {
+        user_id: userId,
+        title: original.title,
+        text_content: original.text_content,
+        file_url: original.file_url,
+        file_type: original.file_type,
+        is_active: true,
+      },
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Post reactivated successfully',
+      post: { ...newPost, votes: [], ticketsCount: 0 },
+    })
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
   }

@@ -1,9 +1,15 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { prisma } from '@/lib/prisma'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
+export const dynamic = 'force-dynamic'
+
+function serializeBigInt(obj: any): any {
+  return JSON.parse(
+    JSON.stringify(obj, (key, value) =>
+      typeof value === 'bigint' ? value.toString() : value
+    )
+  )
+}
 
 export async function GET(req: Request) {
   try {
@@ -11,19 +17,23 @@ export async function GET(req: Request) {
     const userId = searchParams.get('userId')
 
     if (!userId) {
-      return NextResponse.json({ success: false, error: 'Missing userId' }, { status: 400 })
+      return NextResponse.json({ success: false, error: 'User ID is required' }, { status: 400 })
     }
 
-    const { data: posts, error } = await supabase
-      .from('posts')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
+    const rawPosts = await prisma.user_files.findMany({
+      where: { user_id: userId },
+      orderBy: { created_at: 'desc' },
+      include: {
+        users: true,
+        votes: true,
+      },
+    })
 
-    if (error) throw error
+    const posts = serializeBigInt(rawPosts)
 
-    return NextResponse.json({ success: true, posts: posts || [] })
+    return NextResponse.json({ success: true, posts })
   } catch (err: any) {
+    console.error('Error fetching user posts:', err)
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
   }
 }

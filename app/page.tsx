@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import Header from '@/components/Header'
 import CreatePostModal from '@/components/CreatePostModal'
@@ -36,6 +36,10 @@ export default function HomePage() {
   
   const [timeLeft, setTimeLeft] = useState<number>(3600)
   const [drawCancelledMessage, setDrawCancelledMessage] = useState<string | null>(null)
+  // Snapshot των posts που συμμετείχαν στην κλήρωση (το feed αδειάζει μόλις γίνει η κλήρωση)
+  const [drawSnapshot, setDrawSnapshot] = useState<any[]>([])
+  // Κλείδωμα ώστε η κλήρωση να ξεκινά ΜΙΑ φορά ανά ώρα σε αυτό το tab
+  const drawLockRef = useRef<number>(0)
 
   const handleOpenLogin = () => {
     setIsCreatePostOpen(false)
@@ -164,19 +168,21 @@ export default function HomePage() {
           return updated
         })
 
-        // 🧹 2. ΟΡΙΣΤΙΚΟΣ ΜΗΔΕΝΙΣΜΟΣ: Καθαρισμός Posts & Λαχνών
-        setPosts([])
-        setJackpotAmount(50.00)
-        localStorage.removeItem('ugc_posts') // Καθαρισμός τοπικής μνήμης
+        // 🎰 2. Κρατάμε snapshot για το animation. Το feed αδειάζει μετά το κλείσιμο του modal (handleDrawComplete)
+        setDrawSnapshot(Array.isArray(data.drawPosts) ? data.drawPosts : [])
 
         // 3. Ανανέωση στοιχείων χρήστη & φρεσκάρισμα από τη βάση
-        if (user?.id) refreshUserData(user.id)
-        
+        try {
+          const savedId = JSON.parse(localStorage.getItem('ugc_user') || 'null')?.id
+          if (savedId) refreshUserData(savedId)
+        } catch (e) {}
+
         return winnerData
-      } else if (data && !data.executed) {
+      } else if (data && !data.executed && !data.alreadyExecuted) {
         setDrawCancelledMessage(`⚠️ ${data.message}`)
         return null
       }
+      return null
     } catch (err) {
       console.error('Error executing draw:', err)
       return null
@@ -227,6 +233,9 @@ export default function HomePage() {
     }
 
     const handleHourBoundary = async () => {
+      // Αποφεύγουμε διπλές κλήσεις (το timer πέφτει 2-3 φορές γύρω από την αλλαγή ώρας)
+      if (Date.now() - drawLockRef.current < 120000) return
+      drawLockRef.current = Date.now()
       try {
         const res = await fetch('/api/feed', { cache: 'no-store' })
         const data = await res.json().catch(() => null)
@@ -426,8 +435,9 @@ export default function HomePage() {
   const handleDrawComplete = async (winningPost: any, fallbackSupportersList: any[]) => {
     setIsSlotDrawOpen(false)
     setServerWinner(null)
+    setDrawSnapshot([])
 
-    // 🧹 Επιβεβαίωση μηδενισμού posts και καθαρισμός storage μετά το κλείσιμο του modal
+    // 🧹 Μηδενισμός posts και καθαρισμός storage ΜΕΤΑ το τέλος του animation
     setPosts([])
     localStorage.removeItem('ugc_posts')
 
@@ -769,10 +779,10 @@ export default function HomePage() {
 
       <SlotDrawModal 
         isOpen={isSlotDrawOpen} 
-        jackpotAmount={jackpotAmount} 
-        posts={posts}
+        jackpotAmount={serverWinner?.total_jackpot ?? jackpotAmount} 
+        posts={drawSnapshot}
         serverWinner={serverWinner}
-        onClose={() => setIsSlotDrawOpen(false)}
+        onClose={() => { setIsSlotDrawOpen(false); setDrawSnapshot([]); setServerWinner(null); fetchFeedData() }}
         onDrawComplete={handleDrawComplete}
         lang={lang}
       />

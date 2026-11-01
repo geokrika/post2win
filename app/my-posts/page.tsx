@@ -55,12 +55,11 @@ export default function MyPostsPage() {
       const data = await res.json()
 
       if (data.success) {
-        // Ενημέρωση τοπικά στο UI
-        setPosts((prev) =>
-          prev.map((p) => (p.id === postId ? { ...p, is_active: true } : p))
-        )
+        // Δημιουργήθηκε ΝΕΟ post με 0 λαχνούς: ξαναφορτώνουμε τη λίστα
+        localStorage.removeItem('ugc_posts')
+        await fetchUserPosts(user.id)
         if (typeof window !== 'undefined') {
-          window.alert('🚀 Το post έγινε ξανά ενεργό και εμφανίζεται στην αρχική σελίδα!')
+          window.alert('🚀 Το post δημοσιεύτηκε ξανά με 0 λαχνούς και εμφανίζεται στην αρχική σελίδα!')
         }
       } else {
         if (typeof window !== 'undefined') {
