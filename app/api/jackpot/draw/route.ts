@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { isAdminRequest, isInsideDrawWindow } from '@/lib/adminAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,19 +17,24 @@ async function executeDraw() {
   })
 
   // Μετράμε μόνο λαχνούς που έγιναν ΜΕΤΑ τη δημιουργία του post (ίδια λογική με το /api/feed)
-  const activePosts = rawActivePosts.map((p: any) => ({
+  const allActivePosts = rawActivePosts.map((p: any) => ({
     ...p,
     votes: (p.votes || []).filter(
       (v: any) => !v.created_at || !p.created_at || new Date(v.created_at) >= new Date(p.created_at)
     ),
   }))
 
-  // 🛑 Κανόνας: Απαιτούνται τουλάχιστον 4 ενεργά posts
+  // Στην κλήρωση μπαίνουν ΜΟΝΟ posts με τουλάχιστον 1 λαχνό. Τα υπόλοιπα μένουν ενεργά για τον επόμενο γύρο.
+  const activePosts = allActivePosts.filter((p: any) =>
+    (p.votes || []).reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0) > 0
+  )
+
+  // 🛑 Κανόνας: Απαιτούνται τουλάχιστον 4 posts με λαχνούς
   if (activePosts.length < 4) {
     return {
       success: false,
       executed: false,
-      message: `Απαιτούνται τουλάχιστον 4 ενεργά posts. Βρέθηκαν ${activePosts.length}/4. Η κλήρωση αναβάλλεται.`,
+      message: `Απαιτούνται τουλάχιστον 4 posts με λαχνούς. Βρέθηκαν ${activePosts.length}/4. Η κλήρωση αναβάλλεται.`,
       activeCount: activePosts.length,
     }
   }
@@ -39,7 +45,7 @@ async function executeDraw() {
   activePosts.forEach((post: any) => {
     const postVotes = post.votes || []
     const totalPostTickets = postVotes.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0)
-    const ticketsCount = totalPostTickets > 0 ? totalPostTickets : 1
+    const ticketsCount = totalPostTickets
 
     // Προσθέτουμε το post στην κάλπη όσες φορές όσες και οι λαχνοί του
     for (let i = 0; i < ticketsCount; i++) {
@@ -162,17 +168,23 @@ async function executeDraw() {
   }
 }
 
-export async function GET() {
+// Μόνο POST. Οι απλοί χρήστες μπορούν να ξεκινήσουν κλήρωση μόνο γύρω από την αλλαγή ώρας.
+// Ο admin (header x-admin-secret) μπορεί να την κάνει οποτεδήποτε.
+export async function POST(req: Request) {
   try {
-    const result = await executeDraw()
-    return NextResponse.json(result)
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error?.message || 'Draw error' }, { status: 500 })
-  }
-}
+    if (!isAdminRequest(req) && !isInsideDrawWindow()) {
+      return NextResponse.json(
+        {
+          success: false,
+          executed: false,
+          outsideWindow: true,
+          message: 'Η κλήρωση γίνεται μόνο στην αλλαγή της ώρας.',
+          error: 'Outside draw window',
+        },
+        { status: 403 }
+      )
+    }
 
-export async function POST() {
-  try {
     const result = await executeDraw()
     return NextResponse.json(result)
   } catch (error: any) {

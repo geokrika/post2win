@@ -22,6 +22,13 @@ export async function POST(req: Request) {
     const phone = body?.phone?.trim() || null
     const password = body?.password || ''
 
+    if (password.length < 6) {
+      return NextResponse.json(
+        { success: false, error: 'Ο κωδικός πρέπει να έχει τουλάχιστον 6 χαρακτήρες' },
+        { status: 400 }
+      )
+    }
+
     if (!username || !email) {
       return NextResponse.json(
         { success: false, error: 'Το username και το email είναι υποχρεωτικά' },
@@ -59,7 +66,7 @@ export async function POST(req: Request) {
       console.log('🔄 Creating user in Supabase Auth...')
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: email,
-        password: password || 'DefaultPassword123!',
+        password: password,
         email_confirm: true,
         user_metadata: { username, full_name: fullName }
       })

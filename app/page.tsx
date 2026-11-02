@@ -178,7 +178,7 @@ export default function HomePage() {
         } catch (e) {}
 
         return winnerData
-      } else if (data && !data.executed && !data.alreadyExecuted) {
+      } else if (data && !data.executed && !data.alreadyExecuted && !data.outsideWindow) {
         setDrawCancelledMessage(`⚠️ ${data.message}`)
         return null
       }
@@ -227,8 +227,8 @@ export default function HomePage() {
     const getSecondsUntilNextHour = () => {
       const now = new Date()
       const nextHour = new Date(now)
-      nextHour.setMinutes(0, 0, 0)
-      nextHour.setHours(nextHour.getHours() + 1)
+      nextHour.setUTCMinutes(0, 0, 0)
+      nextHour.setUTCHours(nextHour.getUTCHours() + 1)
       return Math.max(1, Math.floor((nextHour.getTime() - now.getTime()) / 1000))
     }
 

@@ -15,10 +15,22 @@ export default function AdminDashboard() {
   const [filterLive, setFilterLive] = useState(false)
   const [loading, setLoading] = useState(true)
   const [drawing, setDrawing] = useState(false)
+  const [secret, setSecret] = useState('')
+  const [secretInput, setSecretInput] = useState('')
+  const [authError, setAuthError] = useState('')
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('/api/admin/stats', { cache: 'no-store' })
+      const res = await fetch('/api/admin/stats', {
+        cache: 'no-store',
+        headers: { 'x-admin-secret': secret },
+      })
+      if (res.status === 401) {
+        sessionStorage.removeItem('admin_secret')
+        setSecret('')
+        setAuthError('Λάθος κωδικός')
+        return
+      }
       const data = await res.json()
       if (data.success) {
         if (data.stats) setStats(data.stats)
@@ -32,8 +44,28 @@ export default function AdminDashboard() {
   }
 
   useEffect(() => {
-    fetchStats()
+    try {
+      const saved = sessionStorage.getItem('admin_secret')
+      if (saved) setSecret(saved)
+    } catch (e) {}
+    setLoading(false)
   }, [])
+
+  useEffect(() => {
+    if (secret) {
+      setLoading(true)
+      fetchStats()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [secret])
+
+  const handleLogin = () => {
+    if (!secretInput.trim()) return
+    try { sessionStorage.setItem('admin_secret', secretInput.trim()) } catch (e) {}
+    setAuthError('')
+    setSecret(secretInput.trim())
+    setSecretInput('')
+  }
 
   const handleForceDraw = async () => {
     if (!confirm('Είστε σίγουροι ότι θέλετε να εκτελέσετε αναγκαστική κλήρωση Jackpot τώρα;')) {
@@ -42,7 +74,7 @@ export default function AdminDashboard() {
 
     setDrawing(true)
     try {
-      const res = await fetch('/api/jackpot/draw', { method: 'POST' })
+      const res = await fetch('/api/jackpot/draw', { method: 'POST', headers: { 'x-admin-secret': secret } })
       const data = await res.json()
 
       if (data.success) {
@@ -59,6 +91,31 @@ export default function AdminDashboard() {
   }
 
   const displayedUsers = filterLive ? users.filter((u) => u.isLive) : users
+
+  if (!secret) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
+        <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+          <h1 className="text-xl font-black text-amber-400">🛡️ Admin</h1>
+          <input
+            type="password"
+            value={secretInput}
+            onChange={(e) => setSecretInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+            placeholder="Κωδικός admin"
+            className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-white outline-none focus:border-amber-400"
+          />
+          {authError && <p className="text-sm text-red-400">{authError}</p>}
+          <button
+            onClick={handleLogin}
+            className="w-full py-3 rounded-xl bg-amber-400 text-slate-950 font-bold"
+          >
+            Είσοδος
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-white p-6 max-w-6xl mx-auto">
