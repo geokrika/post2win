@@ -82,7 +82,7 @@ export default function MyPostsPage() {
     setDeletingId(postId)
 
     try {
-      const res = await fetch(`/api/posts/manage?postId=${postId}`, { method: 'DELETE' })
+      const res = await fetch(`/api/posts/manage?postId=${postId}&userId=${user?.id}`, { method: 'DELETE' })
       const data = await res.json()
 
       if (data.success) {

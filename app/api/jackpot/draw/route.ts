@@ -1,22 +1,35 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { isAdminRequest, isInsideDrawWindow } from '@/lib/adminAuth'
+import { isAdminRequest, isCronRequest } from '@/lib/adminAuth'
+import { getAthensParts, isScheduledDrawAllowed } from '@/lib/drawTime'
+import { drawRowToWinner, drawRowToParticipants } from '@/lib/drawFormat'
 
 export const dynamic = 'force-dynamic'
 
-async function executeDraw() {
-  // 1. Φέρνουμε τα ενεργά posts μαζί με τον δημιουργό (users) & τους λαχνούς/υποστηρικτές (votes)
+type DrawKind = 'SCHEDULED' | 'MANUAL'
+
+const displayName = (u: any, fallback: string) =>
+  u?.username || u?.full_name || (u?.email ? String(u.email).split('@')[0] : fallback)
+
+async function executeDraw(kind: DrawKind) {
+  // Προγραμματισμένη κλήρωση: μία φορά την ημέρα (ώρα Αθήνας). Η μοναδικότητα του draw_day στη βάση το εγγυάται.
+  const drawDay = kind === 'SCHEDULED' ? getAthensParts().day : null
+
+  if (drawDay) {
+    const existing = await prisma.draw_results.findUnique({ where: { draw_day: drawDay }, select: { id: true } })
+    if (existing) {
+      return { success: false, executed: false, alreadyExecuted: true, message: 'Η σημερινή κλήρωση έχει ήδη γίνει.' }
+    }
+  }
+
+  // 1. Ενεργά posts + δημιουργός + λαχνοί/υποστηρικτές
   const rawActivePosts = await prisma.posts.findMany({
     where: { is_active: true },
-    include: {
-      users: true,
-      votes: {
-        include: { users: true },
-      },
-    },
+    include: { users: true, votes: { include: { users: true } } },
   })
 
-  // Μετράμε μόνο λαχνούς που έγιναν ΜΕΤΑ τη δημιουργία του post (ίδια λογική με το /api/feed)
+  // Μετράμε μόνο λαχνούς μετά τη δημιουργία του post (ίδια λογική με το /api/feed)
+  const ticketsOf = (p: any) => (p.votes || []).reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0)
   const allActivePosts = rawActivePosts.map((p: any) => ({
     ...p,
     votes: (p.votes || []).filter(
@@ -25,11 +38,8 @@ async function executeDraw() {
   }))
 
   // Στην κλήρωση μπαίνουν ΜΟΝΟ posts με τουλάχιστον 1 λαχνό. Τα υπόλοιπα μένουν ενεργά για τον επόμενο γύρο.
-  const activePosts = allActivePosts.filter((p: any) =>
-    (p.votes || []).reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0) > 0
-  )
+  const activePosts = allActivePosts.filter((p: any) => ticketsOf(p) > 0)
 
-  // 🛑 Κανόνας: Απαιτούνται τουλάχιστον 4 posts με λαχνούς
   if (activePosts.length < 4) {
     return {
       success: false,
@@ -39,155 +49,135 @@ async function executeDraw() {
     }
   }
 
-  // 2. Δημιουργία της "Κάλπης" Λαχνών (Ticket Weighted Pool)
-  const ticketPool: { postId: string; post: any }[] = []
-
+  // 2. Κάλπη λαχνών (κάθε λαχνός = μία συμμετοχή του post)
+  const ticketPool: any[] = []
   activePosts.forEach((post: any) => {
-    const postVotes = post.votes || []
-    const totalPostTickets = postVotes.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0)
-    const ticketsCount = totalPostTickets
-
-    // Προσθέτουμε το post στην κάλπη όσες φορές όσες και οι λαχνοί του
-    for (let i = 0; i < ticketsCount; i++) {
-      ticketPool.push({ postId: post.id, post })
-    }
+    const n = ticketsOf(post)
+    for (let i = 0; i < n; i++) ticketPool.push(post)
   })
 
-  if (ticketPool.length === 0) {
-    return {
-      success: false,
-      executed: false,
-      message: 'Δεν βρέθηκαν λαχνοί για την πραγματοποίηση της κλήρωσης.',
-    }
+  // 3. Jackpot: 50€ βάση + 0.90€ ανά λαχνό. 70% δημιουργός, 30% υποστηρικτές
+  const totalJackpot = Number((50.0 + ticketPool.length * 0.9).toFixed(2))
+  const creatorPrize = Number((totalJackpot * 0.7).toFixed(2))
+  const supportersPool = Number((totalJackpot * 0.3).toFixed(2))
+
+  // 4. Κλήρωση με βάση τους λαχνούς
+  const winningPost: any = ticketPool[Math.floor(Math.random() * ticketPool.length)]
+  const winnerUser = winningPost.users
+  const winnerName = displayName(winnerUser, 'Winner')
+
+  // 5. Υποστηρικτές του νικητήριου post (ένας ανά χρήστη, με άθροισμα λαχνών)
+  const winningTickets = ticketsOf(winningPost)
+  const supMap = new Map<string, { userId: string | null; username: string; tickets: number; prizeWon: number }>()
+  for (const v of winningPost.votes || []) {
+    const key = v.users?.id || v.user_id || `anon-${supMap.size}`
+    const cur = supMap.get(key) || { userId: v.users?.id || v.user_id || null, username: displayName(v.users, 'Supporter'), tickets: 0, prizeWon: 0 }
+    cur.tickets += Number(v.tickets_earned) || 1
+    supMap.set(key, cur)
   }
+  const supportersList = Array.from(supMap.values()).map((s) => ({
+    ...s,
+    prizeWon: winningTickets > 0 ? Number(((s.tickets / winningTickets) * supportersPool).toFixed(2)) : 0,
+  }))
 
-  // 💰 Δυναμικός Υπολογισμός Jackpot (€50 βάση + €0.90 ανά λαχνό)
-  const totalJackpot = Number((50.00 + ticketPool.length * 0.90).toFixed(2))
-  const creatorPrize = Number((totalJackpot * 0.70).toFixed(2))
-  const supportersPool = Number((totalJackpot * 0.30).toFixed(2))
+  const participants = activePosts.map((p: any) => ({
+    id: p.id,
+    title: p.title,
+    text_content: p.text_content,
+    users: { username: displayName(p.users, 'Player') },
+    votes: [{ tickets_earned: ticketsOf(p) }],
+  }))
 
-  // 3. 🎟️ ΚΛΗΡΩΣΗ ΜΕ ΛΑΧΝΟΥΣ (Weighted Selection)
-  const winningTicketIndex = Math.floor(Math.random() * ticketPool.length)
-  const winningTicket = ticketPool[winningTicketIndex]
-  const winningPost: any = winningTicket.post
-  const winnerUser = winningPost?.users
-
-  // 4. Υπολογισμός μεριδίου για τους Υποστηρικτές του ΝΙΚΗΤΗΡΙΟΥ post
-  const winningVotes = winningPost?.votes || []
-  const winningPostTickets = winningVotes.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 1), 0)
-
-  const supportersList = winningVotes.map((v: any) => {
-    const supUser = v.users || {}
-    const supName = supUser.username || supUser.full_name || (supUser.email ? supUser.email.split('@')[0] : 'Supporter')
-    const userTickets = Number(v.tickets_earned) || 1
-    const prizeWon = winningPostTickets > 0 ? Number(((userTickets / winningPostTickets) * supportersPool).toFixed(2)) : 0
-
-    return {
-      userId: supUser.id,
-      username: supName,
-      tickets: userTickets,
-      prizeWon: prizeWon,
-    }
-  })
-
-  // 5. Database Transaction: Ενημέρωση Υπολοίπων & Κλείσιμο Κύκλου (is_active = false)
   const activePostIds = activePosts.map((p: any) => p.id)
 
+  // 6. Μία transaction: κλείσιμο posts + πληρωμές + αποθήκευση αποτελέσματος
+  let record: any
   try {
-    await prisma.$transaction(async (tx) => {
-      // Κλείνουμε τα posts ΜΟΝΟ αν είναι ακόμα ενεργά. Αν άλλο αίτημα πρόλαβε, count != length → ακύρωση.
+    record = await prisma.$transaction(async (tx) => {
       const closed = await tx.posts.updateMany({
         where: { id: { in: activePostIds }, is_active: true },
         data: { is_active: false },
       })
-      if (closed.count !== activePostIds.length) {
-        throw new Error('DRAW_ALREADY_EXECUTED')
-      }
+      if (closed.count !== activePostIds.length) throw new Error('DRAW_ALREADY_EXECUTED')
 
-      // Πίστωση Δημιουργού (70%)
       if (winnerUser?.id) {
-        await tx.users.update({
-          where: { id: winnerUser.id },
-          data: { wallet_balance: { increment: creatorPrize } },
-        })
+        await tx.users.update({ where: { id: winnerUser.id }, data: { wallet_balance: { increment: creatorPrize } } })
       }
-
-      // Πίστωση Υποστηρικτών (30% αναλογικά)
       for (const sup of supportersList) {
         if (sup.userId && sup.prizeWon > 0) {
-          await tx.users.update({
-            where: { id: sup.userId },
-            data: { wallet_balance: { increment: sup.prizeWon } },
-          })
+          await tx.users.update({ where: { id: sup.userId }, data: { wallet_balance: { increment: sup.prizeWon } } })
         }
       }
+
+      return tx.draw_results.create({
+        data: {
+          draw_day: drawDay,
+          kind,
+          winning_post_id: winningPost.id,
+          winner_user_id: winnerUser?.id || null,
+          winner_name: winnerName,
+          post_title: winningPost.title || 'Untitled Post',
+          post_text: winningPost.text_content || '',
+          post_media: winningPost.file_url || null,
+          total_jackpot: totalJackpot,
+          creator_prize: creatorPrize,
+          supporters_pool: supportersPool,
+          total_tickets: ticketPool.length,
+          total_posts: activePosts.length,
+          supporters: supportersList,
+          participants,
+        },
+      })
     })
   } catch (e: any) {
-    if (e?.message === 'DRAW_ALREADY_EXECUTED') {
-      return {
-        success: false,
-        executed: false,
-        alreadyExecuted: true,
-        message: 'Η κλήρωση έχει ήδη εκτελεστεί.',
-      }
+    // P2002 = παραβίαση μοναδικότητας draw_day → άλλο αίτημα πρόλαβε. Η transaction έχει ακυρωθεί ολόκληρη.
+    if (e?.message === 'DRAW_ALREADY_EXECUTED' || e?.code === 'P2002') {
+      return { success: false, executed: false, alreadyExecuted: true, message: 'Η κλήρωση έχει ήδη εκτελεστεί.' }
     }
     throw e
   }
-
-  const winnerName = winnerUser?.username || winnerUser?.full_name || (winnerUser?.email ? winnerUser.email.split('@')[0] : 'Winner')
 
   return {
     success: true,
     executed: true,
     message: 'Η κλήρωση ολοκληρώθηκε με επιτυχία βάσει λαχνών!',
-    winner: {
-      id: winningPost.id,
-      winner_name: winnerName,
-      winner_id: winnerUser?.id,
-      post_title: winningPost.title || 'Untitled Post',
-      post_text: winningPost.text_content || '',
-      post_media: winningPost.file_url || null,
-      file_type: winningPost.file_type || null,
-      total_jackpot: totalJackpot,
-      creator_prize: creatorPrize,
-      supporters_pool: supportersPool,
-      supporters: supportersList,
-      date: new Date().toLocaleString('el-GR'),
-    },
+    drawId: record.id,
+    winner: { ...drawRowToWinner(record), file_type: winningPost.file_type || null },
     totalPostsCount: activePosts.length,
     totalTicketsCount: ticketPool.length,
-    drawPosts: activePosts.map((p: any) => ({
-      id: p.id,
-      title: p.title,
-      text_content: p.text_content,
-      users: {
-        username: p.users?.username || p.users?.full_name || (p.users?.email ? p.users.email.split('@')[0] : 'Player'),
-      },
-      votes: (p.votes || []).map((v: any) => ({ tickets_earned: Number(v.tickets_earned) || 1 })),
-    })),
+    drawPosts: drawRowToParticipants(record),
   }
 }
 
-// Μόνο POST. Οι απλοί χρήστες μπορούν να ξεκινήσουν κλήρωση μόνο γύρω από την αλλαγή ώρας.
-// Ο admin (header x-admin-secret) μπορεί να την κάνει οποτεδήποτε.
+// Μόνο POST.
+//  - Απλός χρήστης (browser): μόνο 21:00-21:10 ώρα Αθήνας, μία φορά την ημέρα.
+//  - Cron με CRON_SECRET: από 21:00 και μετά, μία φορά την ημέρα.
+//  - Admin (x-admin-secret): χειροκίνητη κλήρωση οποτεδήποτε (δεν μπλοκάρει την ημερήσια).
 export async function POST(req: Request) {
   try {
-    if (!isAdminRequest(req) && !isInsideDrawWindow()) {
+    const admin = isAdminRequest(req)
+    const cron = isCronRequest(req)
+
+    let kind: DrawKind = 'SCHEDULED'
+    if (admin) {
+      kind = 'MANUAL'
+    } else if (!isScheduledDrawAllowed(cron)) {
       return NextResponse.json(
         {
           success: false,
           executed: false,
           outsideWindow: true,
-          message: 'Η κλήρωση γίνεται μόνο στην αλλαγή της ώρας.',
+          message: 'Η κλήρωση γίνεται καθημερινά στις 21:00.',
           error: 'Outside draw window',
         },
         { status: 403 }
       )
     }
 
-    const result = await executeDraw()
+    const result = await executeDraw(kind)
     return NextResponse.json(result)
   } catch (error: any) {
+    console.error('Draw error:', error)
     return NextResponse.json({ success: false, error: error?.message || 'Draw error' }, { status: 500 })
   }
 }

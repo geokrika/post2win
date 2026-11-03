@@ -6,6 +6,7 @@ import Header from '@/components/Header'
 import CreatePostModal from '@/components/CreatePostModal'
 import BetButton from '@/components/BetButton'
 import WinnersHistoryModal from '@/components/WinnersHistoryModal'
+import { getAthensParts, DRAW_HOUR, CLIENT_WINDOW_MINUTES } from '@/lib/drawTime'
 import SlotDrawModal from '@/components/SlotDrawModal'
 import MyPostsModal from '@/components/MyPostsModal'
 
@@ -34,12 +35,14 @@ export default function HomePage() {
   const [isSlotDrawOpen, setIsSlotDrawOpen] = useState(false)
   const [isMyPostsOpen, setIsMyPostsOpen] = useState(false)
   
-  const [timeLeft, setTimeLeft] = useState<number>(3600)
+  const [timeLeft, setTimeLeft] = useState<number>(0)
   const [drawCancelledMessage, setDrawCancelledMessage] = useState<string | null>(null)
   // Snapshot των posts που συμμετείχαν στην κλήρωση (το feed αδειάζει μόλις γίνει η κλήρωση)
   const [drawSnapshot, setDrawSnapshot] = useState<any[]>([])
-  // Κλείδωμα ώστε η κλήρωση να ξεκινά ΜΙΑ φορά ανά ώρα σε αυτό το tab
+  // Μέχρι ποια στιγμή (timestamp) δεν ξαναζητάμε κλήρωση από αυτό το tab
   const drawLockRef = useRef<number>(0)
+  // Τελευταία κλήρωση που έχει ήδη εμφανιστεί σε αυτή τη συσκευή
+  const seenDrawRef = useRef<string | null>(null)
 
   const handleOpenLogin = () => {
     setIsCreatePostOpen(false)
@@ -149,51 +152,59 @@ export default function HomePage() {
       console.error('Error in fetchFeedData:', err)
     }
   }
-// 🟢 ΕΚΤΕΛΕΣΗ ΚΛΗΡΩΣΗΣ & ΠΛΗΡΕΣ ΜΗΔΕΝΙΣΜΟΣ FEED/STORAGE
+// 🟢 ΕΜΦΑΝΙΣΗ ΑΠΟΤΕΛΕΣΜΑΤΟΣ ΚΛΗΡΩΣΗΣ (τα δεδομένα έρχονται πάντα από τη βάση)
+  const presentDraw = (winner: any, participants: any[]) => {
+    const id = winner?.draw_id
+    if (!id || seenDrawRef.current === id) return
+    seenDrawRef.current = id
+    try { localStorage.setItem('ugc_seen_draw', id) } catch (e) {}
+
+    setLastWinner(winner)
+    fetchWinnersHistory()
+
+    try {
+      const savedId = JSON.parse(localStorage.getItem('ugc_user') || 'null')?.id
+      if (savedId) refreshUserData(savedId)
+    } catch (e) {}
+
+    // Animation μόνο αν η κλήρωση έγινε μόλις τώρα. Αλλιώς ενημερώνουμε σιωπηλά το feed και το ιστορικό.
+    const ageMs = Date.now() - new Date(winner.drawn_at).getTime()
+    if (ageMs < 3 * 60 * 1000 && Array.isArray(participants) && participants.length > 0) {
+      setDrawSnapshot(participants)
+      setServerWinner(winner)
+      setIsSlotDrawOpen(true)
+    } else {
+      fetchFeedData()
+    }
+  }
+
+  // Όλοι οι browsers ελέγχουν αν υπάρχει νέα κλήρωση στη βάση
+  const pollLatestDraw = async () => {
+    try {
+      const seen = seenDrawRef.current ? `?seen=${seenDrawRef.current}` : ''
+      const res = await fetch(`/api/jackpot/latest${seen}`, { cache: 'no-store' })
+      const data = await res.json().catch(() => null)
+      if (data?.success && data.draw?.winner) {
+        presentDraw(data.draw.winner, data.draw.participants || [])
+      }
+    } catch (e) {}
+  }
+
+  // Ζητάμε από τον server να εκτελέσει την ημερήσια κλήρωση (ο server αποφασίζει αν επιτρέπεται και αν έχει ήδη γίνει)
   const executeJackpotDraw = async () => {
     try {
       const res = await fetch('/api/jackpot/draw', { method: 'POST' })
       const data = await res.json().catch(() => null)
 
       if (data && data.success && data.executed && data.winner) {
-        const winnerData = data.winner
-
-        // 1. Αποθήκευση Νικητή & Ενημέρωση Ιστορικού
-        setLastWinner(winnerData)
-        localStorage.setItem('ugc_last_winner', JSON.stringify(winnerData))
-
-        setWinnersHistory((prev) => {
-          const updated = [winnerData, ...prev]
-          localStorage.setItem('ugc_winners_history', JSON.stringify(updated))
-          return updated
-        })
-
-        // 🎰 2. Κρατάμε snapshot για το animation. Το feed αδειάζει μετά το κλείσιμο του modal (handleDrawComplete)
-        setDrawSnapshot(Array.isArray(data.drawPosts) ? data.drawPosts : [])
-
-        // 3. Ανανέωση στοιχείων χρήστη & φρεσκάρισμα από τη βάση
-        try {
-          const savedId = JSON.parse(localStorage.getItem('ugc_user') || 'null')?.id
-          if (savedId) refreshUserData(savedId)
-        } catch (e) {}
-
-        return winnerData
+        presentDraw(data.winner, data.drawPosts || [])
       } else if (data && !data.executed && !data.alreadyExecuted && !data.outsideWindow) {
         setDrawCancelledMessage(`⚠️ ${data.message}`)
-        return null
+        drawLockRef.current = Date.now() + 10 * 60 * 1000
+        setTimeout(() => setDrawCancelledMessage(null), 10 * 60 * 1000)
       }
-      return null
     } catch (err) {
       console.error('Error executing draw:', err)
-      return null
-    }
-  }
-
-  const triggerDraw = async () => {
-    const winnerData = await executeJackpotDraw()
-    if (winnerData) {
-      setServerWinner(winnerData)
-      setIsSlotDrawOpen(true)
     }
   }
 
@@ -212,68 +223,49 @@ export default function HomePage() {
       } catch (e) {}
     }
 
-    const savedLastWinner = localStorage.getItem('ugc_last_winner')
-    if (savedLastWinner) {
-      try { setLastWinner(JSON.parse(savedLastWinner)) } catch (e) {}
-    }
-
-    const savedHistory = localStorage.getItem('ugc_winners_history')
-    if (savedHistory) {
-      try { setWinnersHistory(JSON.parse(savedHistory)) } catch (e) {}
-    }
+    try { seenDrawRef.current = localStorage.getItem('ugc_seen_draw') } catch (e) {}
+    // Το ιστορικό νικητών διαβάζεται πια μόνο από τη βάση. Σβήνουμε τα παλιά τοπικά αντίγραφα.
+    localStorage.removeItem('ugc_last_winner')
+    localStorage.removeItem('ugc_winners_history')
 
     fetchFeedData()
+    pollLatestDraw()
 
-    const getSecondsUntilNextHour = () => {
-      const now = new Date()
-      const nextHour = new Date(now)
-      nextHour.setUTCMinutes(0, 0, 0)
-      nextHour.setUTCHours(nextHour.getUTCHours() + 1)
-      return Math.max(1, Math.floor((nextHour.getTime() - now.getTime()) / 1000))
+    // Κλήρωση 1 φορά την ημέρα στις 21:00 ώρα Ελλάδας
+    const nowSecondsAthens = () => {
+      const { hour, minute, second } = getAthensParts()
+      return hour * 3600 + minute * 60 + second
+    }
+    const secondsUntilDraw = () => {
+      const diff = DRAW_HOUR * 3600 - nowSecondsAthens()
+      return diff > 0 ? diff : diff + 86400
+    }
+    const secondsSinceDrawTime = () => {
+      const diff = nowSecondsAthens() - DRAW_HOUR * 3600
+      return diff >= 0 ? diff : diff + 86400
     }
 
-    const handleHourBoundary = async () => {
-      // Αποφεύγουμε διπλές κλήσεις (το timer πέφτει 2-3 φορές γύρω από την αλλαγή ώρας)
-      if (Date.now() - drawLockRef.current < 120000) return
-      drawLockRef.current = Date.now()
-      try {
-        const res = await fetch('/api/feed', { cache: 'no-store' })
-        const data = await res.json().catch(() => null)
-        const currentPosts = data?.posts || []
-
-        const postsWithTickets = currentPosts.filter((p: any) => {
-          const tickets = p.ticketsCount ?? p.votes?.reduce((acc: number, v: any) => acc + (Number(v.tickets_earned) || 0), 0) ?? 0
-          return tickets > 0
-        })
-
-        if (postsWithTickets.length >= 4) {
-          setDrawCancelledMessage(null)
-          await triggerDraw()
-        } else {
-          setDrawCancelledMessage(
-            lang === 'en'
-              ? `⚠️ Draw postponed: Requires at least 4 active posts with tickets (currently ${postsWithTickets.length}/4).`
-              : `⚠️ Η κλήρωση αναβλήθηκε: Απαιτούνται τουλάχιστον 4 ενεργά posts με λαχνούς (αυτή τη στιγμή ${postsWithTickets.length}/4).`
-          )
-        }
-      } catch (e) {
-        console.error('Boundary check error:', e)
-      }
+    const handleDrawTime = async () => {
+      // Αποφεύγουμε διπλές κλήσεις από το ίδιο tab
+      if (Date.now() < drawLockRef.current) return
+      drawLockRef.current = Date.now() + 120000
+      await executeJackpotDraw()
     }
 
-    setTimeLeft(getSecondsUntilNextHour())
+    setTimeLeft(secondsUntilDraw())
 
     const timerInterval = setInterval(() => {
-      const remainingSeconds = getSecondsUntilNextHour()
-      setTimeLeft(remainingSeconds)
+      setTimeLeft(secondsUntilDraw())
 
-      if (remainingSeconds <= 1 || remainingSeconds >= 3599) {
-        handleHourBoundary()
+      // Τα πρώτα 10 λεπτά μετά τις 21:00 ζητάμε την κλήρωση (ο server την εκτελεί μόνο μία φορά)
+      if (secondsSinceDrawTime() < CLIENT_WINDOW_MINUTES * 60) {
+        handleDrawTime()
       }
     }, 1000)
 
     const feedInterval = setInterval(() => {
       fetchFeedData()
+      pollLatestDraw()
     }, 4000)
 
     return () => {
@@ -421,6 +413,7 @@ export default function HomePage() {
       const data = await res.json().catch(() => null)
       if (data && data.success && Array.isArray(data.history)) {
         setWinnersHistory(data.history)
+        setLastWinner(data.history[0] || null)
       }
     } catch (err) {
       console.error('Error fetching winners history:', err)
@@ -513,7 +506,7 @@ export default function HomePage() {
             <span className="text-2xl animate-spin">⏳</span>
             <div>
               <span className="text-[11px] text-slate-400 font-semibold block uppercase tracking-wider">
-                {isEn ? 'Next Hourly Draw in:' : 'Επόμενη Ωριαία Κλήρωση σε:'}
+                {isEn ? 'Next Daily Draw (21:00) in:' : 'Επόμενη Ημερήσια Κλήρωση (21:00) σε:'}
               </span>
               <span className="text-xl font-black text-amber-400 font-mono tracking-widest">
                 {formatTime(timeLeft)}
